@@ -271,18 +271,34 @@ def posting_worker():
             else:
                 tweet_text = base_name
 
+        max_attempts = 3
+        success = False
+        msg = ""
+        tweet_id = None
+
         if campaign_state["dry_run"]:
             time.sleep(2)
             success, tweet_id, msg = True, f"sim_{int(time.time())}", "Posted successfully (Simulation Test Mode)"
         else:
-            success, msg = browser_poster.post_tweet_with_account(
-                current_acc.get("id"),
-                tweet_text,
-                media_path,
-                headless=campaign_state.get("headless", True)
-            )
-            tweet_id = f"web_{int(time.time())}" if success else None
-        
+            for attempt in range(1, max_attempts + 1):
+                if not campaign_state["is_running"]:
+                    break
+
+                if attempt > 1:
+                    add_log(f"🔄 Retrying post '{filename}' (Attempt {attempt}/{max_attempts}) for account @{current_acc.get('username')}...", "warning", "posting")
+                    time.sleep(15)
+
+                success, msg = browser_poster.post_tweet_with_account(
+                    current_acc.get("id"),
+                    tweet_text,
+                    media_path,
+                    headless=campaign_state.get("headless", True)
+                )
+                
+                if success:
+                    tweet_id = f"web_{int(time.time())}"
+                    break
+
         record = {
             "filename": filename,
             "hash": target_hash,
@@ -296,6 +312,7 @@ def posting_worker():
         
         history.append(record)
         save_json(HISTORY_FILE, history)
+        save_campaign_state()
         
         if success:
             campaign_state["completed"] += 1
@@ -312,23 +329,39 @@ def posting_worker():
                 add_log(f"📁 Moved '{filename}' to .posted archive subfolder.", "info", "posting")
             except Exception as move_err:
                 print(f"[Archive Error] {move_err}")
+
+            import random
+            delay_sec = random.randint(int(campaign_state["delay_min"]), int(campaign_state["delay_max"]))
+            campaign_state["next_post_time"] = time.time() + delay_sec
+            save_campaign_state()
+            
+            add_log(f"⏳ Post published successfully! Waiting {delay_sec} seconds interval delay before next post...", "info", "posting")
+            
+            elapsed = 0
+            while elapsed < delay_sec and campaign_state["is_running"]:
+                if campaign_state["is_paused"]:
+                    time.sleep(1)
+                    continue
+                time.sleep(1)
+                elapsed += 1
+
         else:
             campaign_state["failed"] += 1
             add_log(f"❌ Failed to post '{filename}': {msg}", "danger", "error")
             
-        import random
-        delay_sec = random.randint(int(campaign_state["delay_min"]), int(campaign_state["delay_max"]))
-        campaign_state["next_post_time"] = time.time() + delay_sec
-        
-        add_log(f"⏳ Waiting {delay_sec} seconds interval delay before next post...", "info", "posting")
-        
-        elapsed = 0
-        while elapsed < delay_sec and campaign_state["is_running"]:
-            if campaign_state["is_paused"]:
+            # Fast retry pause on failure (30 seconds) - DO NOT trigger full 1-hour delay!
+            fail_delay_sec = 30
+            campaign_state["next_post_time"] = time.time() + fail_delay_sec
+            save_campaign_state()
+            add_log(f"⚠️ Post failed. Short 30s failure cooldown active before retrying target post...", "warning", "posting")
+            
+            elapsed = 0
+            while elapsed < fail_delay_sec and campaign_state["is_running"]:
+                if campaign_state["is_paused"]:
+                    time.sleep(1)
+                    continue
                 time.sleep(1)
-                continue
-            time.sleep(1)
-            elapsed += 1
+                elapsed += 1
             
     campaign_state["is_running"] = False
     campaign_state["current_file"] = None

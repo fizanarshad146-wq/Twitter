@@ -256,7 +256,9 @@ class MultiAccountBrowserPoster:
                 args_list.append("--start-maximized")
 
             last_err = ""
-            for channel_option in [None, "chrome", "msedge"]:
+            channels_to_try = [None] if sys.platform != "win32" else [None, "chrome", "msedge"]
+
+            for channel_option in channels_to_try:
                 try:
                     kwargs = {
                         "headless": headless,
@@ -272,8 +274,8 @@ class MultiAccountBrowserPoster:
             if not browser:
                 try:
                     import subprocess
-                    self.log("⚙️ Chromium binary missing on server. Running playwright install chromium...", "warning", "posting")
-                    subprocess.run(["playwright", "install", "chromium"], check=True, timeout=120)
+                    self.log("⚙️ Chromium binary missing on server. Running playwright install chromium --with-deps...", "warning", "posting")
+                    subprocess.run(["playwright", "install", "--with-deps", "chromium"], check=True, timeout=300)
                     browser = p.chromium.launch(headless=headless, args=args_list)
                 except Exception as install_err:
                     self.log(f"⚠️ Auto-install chromium attempt failed: {install_err}", "error", "posting")
@@ -314,11 +316,12 @@ class MultiAccountBrowserPoster:
                 time.sleep(3 if headless else 5)
                 _dismiss_overlays()
 
-                # Check if home feed loaded or redirected to login
+                # Check if home feed loaded or redirected to login/verification
                 curr_url = page.url
-                if "x.com/login" in curr_url or "x.com/i/flow/login" in curr_url:
+                if any(k in curr_url for k in ["x.com/login", "x.com/i/flow/login", "account/access", "challenge", "verify"]):
                     browser.close()
-                    return False, f"❌ Saved session expired or logged out for account {account_id}. Please re-login in Account Manager."
+                    reason = "Security verification/challenge prompt detected on X" if "challenge" in curr_url or "access" in curr_url else "Session expired or logged out"
+                    return False, f"❌ {reason} for account {account_id} (URL: {curr_url}). Please re-login in Account Manager."
 
                 # Step 2: Locate tweet composer
                 self.log("Opening compose post editor...", "info", "posting")
@@ -361,9 +364,10 @@ class MultiAccountBrowserPoster:
                         self.log(f"Fallback inline check info: {fb_err}", "warning", "posting")
 
                 if not textbox:
-                    self.log(f"Session invalid or compose textbox not found for account {account_id}.", "error", "error")
+                    curr_url_after = page.url
+                    self.log(f"Session invalid or compose textbox not found for account {account_id}. Current URL: {curr_url_after}", "error", "error")
                     browser.close()
-                    return False, f"❌ Saved session expired or textbox not found for account {account_id}. Please re-login in Account Manager."
+                    return False, f"❌ Saved session expired or compose textbox not found for account {account_id} (Current URL: {curr_url_after}). Please re-login."
 
                 textbox.click(force=True, timeout=5000)
                 time.sleep(0.5)
@@ -376,14 +380,17 @@ class MultiAccountBrowserPoster:
                     self.log(f"Entered tweet text ({len(text_content)} chars)", "info", "posting")
                     time.sleep(1.5 if headless else 2)
 
-                if media_filepath and os.path.exists(media_filepath):
-                    file_input = page.locator('input[data-testid="fileInput"], input[type="file"]').first
-                    if file_input.count() > 0:
-                        file_input.set_input_files(media_filepath, timeout=10000)
-                        self.log(f"📎 Attached media file: {os.path.basename(media_filepath)}", "info", "posting")
-                        time.sleep(4 if headless else 6)
+                if media_filepath:
+                    if not os.path.exists(media_filepath):
+                        self.log(f"❌ Specified media file path does not exist: {media_filepath}", "error", "posting")
                     else:
-                        self.log("⚠️ File input element not found for media attachment.", "warning", "posting")
+                        file_input = page.locator('input[data-testid="fileInput"], input[type="file"]').first
+                        if file_input.count() > 0:
+                            file_input.set_input_files(media_filepath, timeout=10000)
+                            self.log(f"📎 Attached media file: {os.path.basename(media_filepath)} ({round(os.path.getsize(media_filepath)/1024, 1)} KB)", "info", "posting")
+                            time.sleep(4 if headless else 6)
+                        else:
+                            self.log("⚠️ File input element not found for media attachment.", "warning", "posting")
 
                 post_btn = page.locator('button[data-testid="tweetButton"], button[data-testid="tweetButtonInline"], div[data-testid="tweetButton"], div[data-testid="tweetButtonInline"], div[role="button"]:has-text("Post")').first
                 
@@ -402,17 +409,22 @@ class MultiAccountBrowserPoster:
 
                             browser.close()
                             return True, "Successfully published tweet directly on X.com!"
+                        else:
+                            self.log(f"⚠️ Post button found but remained disabled. Text len: {len(text_content)} chars.", "warning", "posting")
                     except Exception as btn_err:
-                        self.log(f"Post button interaction error: {btn_err}", "warning", "posting")
+                        self.log(f"Post button interaction warning: {btn_err}", "warning", "posting")
 
                 browser.close()
-                return False, "Post button remained disabled or not clickable (check tweet content/media status)."
+                media_info = f", Media: {os.path.basename(media_filepath)}" if media_filepath else ""
+                return False, f"❌ Post button remained disabled or non-clickable (Tweet length: {len(text_content)} chars{media_info})."
 
             except Exception as e:
-                self.log(f"Tweet automation exception: {e}", "error", "error")
+                err_type = type(e).__name__
+                err_detail = str(e)
+                self.log(f"Tweet automation exception [{err_type}]: {err_detail}", "error", "error")
                 if browser:
                     try:
                         browser.close()
                     except Exception:
                         pass
-                return False, f"Browser Automation Error: {str(e)}"
+                return False, f"❌ Playwright Automation Error [{err_type}]: {err_detail}"

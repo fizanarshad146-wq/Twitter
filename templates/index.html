@@ -434,11 +434,15 @@
         <!-- Add Account Card (1-Click Visible Browser Window Login) -->
         <div class="electro-card">
           <div class="card-title">
-            <i class="fa-solid fa-arrow-up-right-from-square"></i> 1-Click Login & Account Auth
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> 1-Click Login & Account Auth (Local Desktop)
+          </div>
+
+          <div style="background: rgba(0, 240, 255, 0.08); border-left: 3px solid var(--cyan-electro); padding: 10px 14px; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; color: #b8e9ff;">
+            <strong>ℹ️ Note for Render / Cloud Users:</strong> 1-Click Login pops up Chrome on your <strong>Local Desktop PC screen</strong>. If you are accessing this site via Render/Cloud, use <strong>Manual Session Cookie Import</strong> on the right to attach accounts!
           </div>
 
           <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.2rem; line-height: 1.6;">
-            Click <strong>"1-Click Login to Twitter"</strong> below to open Chrome on your screen. Type your email and password yourself in that window. Once logged in, the system automatically captures your session!
+            Click <strong>"1-Click Login to Twitter"</strong> below to open Chrome on your desktop screen. Log into Twitter inside that window and session cookies are captured automatically!
           </p>
 
           <div class="form-group">
@@ -453,8 +457,33 @@
           <div id="login-status-msg" style="margin-top: 10px; text-align: center; font-weight: 600;"></div>
         </div>
 
-        <!-- Accounts List Card -->
+        <!-- Manual Cookie / Auth Token Card (For Render & Cloud) -->
         <div class="electro-card">
+          <div class="card-title">
+            <i class="fa-solid fa-key"></i> Manual Auth Token / Session Import (Cloud / Render)
+          </div>
+
+          <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+            Paste your Twitter <code>auth_token</code> cookie value or exported session JSON below to activate an account on Cloud server without GUI.
+          </p>
+
+          <div class="form-group">
+            <label>Account Handle / Label</label>
+            <input type="text" id="manual-account-name" class="input-electro" placeholder="e.g. @STORY_VIEWER">
+          </div>
+
+          <div class="form-group">
+            <label>Auth Token / Cookie JSON</label>
+            <textarea id="manual-cookie-input" class="input-electro" style="height: 75px; font-family: monospace; font-size: 0.82rem;" placeholder="Paste auth_token value (e.g. c0f5206872...) OR Cookie JSON list"></textarea>
+          </div>
+
+          <button class="btn-electro btn-outline" style="width: 100%; padding: 10px;" onclick="handleManualCookieAdd()">
+            <i class="fa-solid fa-floppy-disk"></i> Save Session Cookie & Attach Account
+          </button>
+        </div>
+
+        <!-- Accounts List Card -->
+        <div class="electro-card" style="grid-column: 1 / -1;">
           <div class="card-title">
             <i class="fa-solid fa-users-gear"></i> Configured Accounts List
           </div>
@@ -494,8 +523,14 @@
             <button class="log-filter-pill" id="history-filter-posted" onclick="filterHistoryStatus('posted')">✅ Completed</button>
             <button class="log-filter-pill" id="history-filter-failed" onclick="filterHistoryStatus('failed')">❌ Failed</button>
             
-            <button class="btn-electro btn-magenta" style="padding: 6px 14px; font-size: 0.78rem; margin-left: 10px;" onclick="clearHistoryLogs()">
-              <i class="fa-solid fa-broom"></i> Clear History
+            <button class="btn-electro btn-outline" style="padding: 6px 12px; font-size: 0.78rem;" onclick="clearUploadFolder()">
+              <i class="fa-solid fa-folder-minus"></i> Clear Queue Folder
+            </button>
+            <button class="btn-electro btn-outline" style="padding: 6px 12px; font-size: 0.78rem;" onclick="clearHistoryLogs()">
+              <i class="fa-solid fa-broom"></i> Clear History Logs
+            </button>
+            <button class="btn-electro btn-magenta" style="padding: 6px 12px; font-size: 0.78rem;" onclick="clearAllLogsAndQueue()">
+              <i class="fa-solid fa-trash-can"></i> Clear All (History + Queue)
             </button>
           </div>
         </div>

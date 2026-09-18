@@ -297,11 +297,14 @@ async function reloginAccount(accId) {
 
 // Manual Cookie Add Fallback
 async function handleManualCookieAdd() {
-  const username = document.getElementById('manual-user-input').value.trim();
-  const cookies = document.getElementById('manual-cookie-input').value.trim();
+  const nameEl = document.getElementById('manual-account-name') || document.getElementById('manual-user-input');
+  const cookieEl = document.getElementById('manual-cookie-input');
+  
+  const username = nameEl ? nameEl.value.trim() : '';
+  const cookies = cookieEl ? cookieEl.value.trim() : '';
 
   if (!cookies) {
-    alert('Please paste auth_token string or JSON.');
+    alert('Please paste auth_token string or Cookie JSON.');
     return;
   }
 
@@ -314,9 +317,9 @@ async function handleManualCookieAdd() {
     const result = await res.json();
 
     if (res.ok) {
-      alert(`🔑 Account saved successfully!`);
-      document.getElementById('manual-user-input').value = '';
-      document.getElementById('manual-cookie-input').value = '';
+      alert(`🔑 Account saved and session cookies attached!`);
+      if (nameEl) nameEl.value = '';
+      if (cookieEl) cookieEl.value = '';
       fetchAccounts();
     } else {
       alert(`Error: ${result.error}`);
@@ -740,15 +743,44 @@ function triggerProjectUpload(projId) {
 
 // Clear Upload Folder
 async function clearUploadFolder() {
-  if (!confirm('Are you sure you want to clear all posts from the folder?')) return;
+  if (!confirm('Are you sure you want to clear all pending files from the queue folder?')) return;
 
   try {
     const res = await fetch('/api/clear_folder', { method: 'DELETE' });
     const data = await res.json();
     alert(`🗑️ ${data.message}`);
+    fetchHistory();
     fetchStats();
   } catch (err) {
     alert('Failed to clear folder.');
+  }
+}
+
+// Clear History Logs
+async function clearHistoryLogs() {
+  if (!confirm('Are you sure you want to clear completed posting history logs?')) return;
+  try {
+    const res = await fetch('/api/history', { method: 'DELETE' });
+    const data = await res.json();
+    alert(`🧹 ${data.message}`);
+    fetchHistory();
+    fetchStats();
+  } catch (err) {
+    alert('Failed to clear history.');
+  }
+}
+
+// Clear All (History Logs + Queue Folder Files)
+async function clearAllLogsAndQueue() {
+  if (!confirm('Are you sure you want to clear BOTH posting history AND all queue folder files?')) return;
+  try {
+    const res = await fetch('/api/clear_all', { method: 'DELETE' });
+    const data = await res.json();
+    alert(`🧹 ${data.message}`);
+    fetchHistory();
+    fetchStats();
+  } catch (err) {
+    alert('Failed to clear history and queue.');
   }
 }
 
@@ -849,20 +881,6 @@ async function deleteQueuedFile(encodedFilename) {
     }
   } catch (err) {
     alert('Failed to remove queued file.');
-  }
-}
-
-// Clear History Logs
-async function clearHistoryLogs() {
-  if (!confirm('Are you sure you want to clear posting history logs?')) return;
-  try {
-    const res = await fetch('/api/history', { method: 'DELETE' });
-    const data = await res.json();
-    alert(`🧹 ${data.message}`);
-    fetchHistory();
-    fetchStats();
-  } catch (err) {
-    alert('Failed to clear history.');
   }
 }
 

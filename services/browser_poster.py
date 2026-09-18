@@ -273,7 +273,7 @@ class MultiAccountBrowserPoster:
                 try:
                     import subprocess
                     self.log("⚙️ Chromium binary missing on server. Running playwright install chromium...", "warning", "posting")
-                    subprocess.run(["playwright", "install", "chromium"], check=True)
+                    subprocess.run(["playwright", "install", "chromium"], check=True, timeout=120)
                     browser = p.chromium.launch(headless=headless, args=args_list)
                 except Exception as install_err:
                     self.log(f"⚠️ Auto-install chromium attempt failed: {install_err}", "error", "posting")
@@ -284,78 +284,129 @@ class MultiAccountBrowserPoster:
             try:
                 viewport_setting = None if not headless else {"width": 1280, "height": 800}
                 context = browser.new_context(storage_state=cpath, viewport=viewport_setting)
+                # Set hard timeouts to prevent infinite hanging
+                context.set_default_timeout(15000)
+                context.set_default_navigation_timeout(25000)
+
                 page = context.new_page()
 
-                # Step 1: Visit home FIRST to establish CSRF token and session context!
-                self.log("Navigating to x.com/home to verify login context...", "info", "posting")
-                page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=30000)
-                time.sleep(3 if headless else 5)
+                def _dismiss_overlays():
+                    try:
+                        selectors = [
+                            'div[role="button"]:has-text("Refuse non-essential cookies")',
+                            'div[role="button"]:has-text("Accept all cookies")',
+                            'div[role="button"]:has-text("Got it")',
+                            'div[role="button"]:has-text("Not now")',
+                            'div[data-testid="app-bar-close"]',
+                            'div[role="button"]:has-text("Dismiss")'
+                        ]
+                        for sel in selectors:
+                            btn = page.locator(sel).first
+                            if btn.count() > 0 and btn.is_visible():
+                                btn.click(timeout=2000, force=True)
+                                time.sleep(0.5)
+                    except Exception:
+                        pass
 
-                # Check if home feed loaded
+                # Step 1: Visit home to establish CSRF token and verify login context
+                self.log("Navigating to x.com/home to verify login context...", "info", "posting")
+                page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=25000)
+                time.sleep(3 if headless else 5)
+                _dismiss_overlays()
+
+                # Check if home feed loaded or redirected to login
                 curr_url = page.url
                 if "x.com/login" in curr_url or "x.com/i/flow/login" in curr_url:
                     browser.close()
                     return False, f"❌ Saved session expired or logged out for account {account_id}. Please re-login in Account Manager."
 
-                # Step 2: Navigate to compose post
+                # Step 2: Locate tweet composer
                 self.log("Opening compose post editor...", "info", "posting")
-                page.goto("https://x.com/compose/post", wait_until="domcontentloaded", timeout=30000)
-                time.sleep(3)
-
-                textbox = None
+                
+                # First try navigating to compose/post
                 try:
-                    textbox = page.wait_for_selector(
-                        'div[data-testid="tweetTextarea_0"], div[role="textbox"][contenteditable="true"], div[aria-label*="Post"], div[aria-label*="Tweet"]',
-                        timeout=12000
-                    )
+                    page.goto("https://x.com/compose/post", wait_until="domcontentloaded", timeout=20000)
+                    time.sleep(2)
+                    _dismiss_overlays()
+                except Exception as nav_e:
+                    self.log(f"Direct compose page navigation notice: {nav_e}", "info", "posting")
+
+                textbox_selector = 'div[data-testid="tweetTextarea_0"], div[role="textbox"][contenteditable="true"], div[aria-label*="Post text"], div[aria-label*="Tweet text"], div[aria-label*="What is happening"]'
+                textbox = None
+
+                try:
+                    elem = page.locator(textbox_selector).first
+                    if elem.count() > 0 and elem.is_visible():
+                        textbox = elem
                 except Exception:
                     pass
 
                 if not textbox:
                     self.log("Trying fallback inline compose box on home page...", "info", "posting")
-                    page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=30000)
-                    time.sleep(3)
                     try:
-                        textbox = page.wait_for_selector(
-                            'div[data-testid="tweetTextarea_0"], div[role="textbox"][contenteditable="true"], div[aria-label*="Post"], div[aria-label*="Tweet"]',
-                            timeout=10000
-                        )
-                    except Exception:
-                        pass
+                        page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=20000)
+                        time.sleep(2)
+                        _dismiss_overlays()
 
-                if not textbox or not textbox.is_visible():
-                    self.log(f"Session invalid or textbox not found for account {account_id}.", "error", "error")
+                        # Try clicking floating compose button if visible
+                        side_compose = page.locator('a[data-testid="SideNav_NewTweet_Button"]').first
+                        if side_compose.count() > 0 and side_compose.is_visible():
+                            side_compose.click(force=True, timeout=3000)
+                            time.sleep(2)
+
+                        elem = page.locator(textbox_selector).first
+                        if elem.count() > 0 and elem.is_visible():
+                            textbox = elem
+                    except Exception as fb_err:
+                        self.log(f"Fallback inline check info: {fb_err}", "warning", "posting")
+
+                if not textbox:
+                    self.log(f"Session invalid or compose textbox not found for account {account_id}.", "error", "error")
                     browser.close()
-                    return False, f"❌ Saved session expired or logged out for account {account_id}. Please re-login in Account Manager."
+                    return False, f"❌ Saved session expired or textbox not found for account {account_id}. Please re-login in Account Manager."
 
-                textbox.click()
-                textbox.fill(text_content)
-                self.log(f"Entered tweet text ({len(text_content)} chars)", "info", "posting")
-                time.sleep(1.5 if headless else 3)
+                textbox.click(force=True, timeout=5000)
+                time.sleep(0.5)
+
+                if text_content:
+                    try:
+                        textbox.fill(text_content, timeout=5000)
+                    except Exception:
+                        page.keyboard.insert_text(text_content)
+                    self.log(f"Entered tweet text ({len(text_content)} chars)", "info", "posting")
+                    time.sleep(1.5 if headless else 2)
 
                 if media_filepath and os.path.exists(media_filepath):
-                    file_input = page.locator('input[data-testid="fileInput"]').first
-                    if file_input:
-                        file_input.set_input_files(media_filepath)
+                    file_input = page.locator('input[data-testid="fileInput"], input[type="file"]').first
+                    if file_input.count() > 0:
+                        file_input.set_input_files(media_filepath, timeout=10000)
                         self.log(f"📎 Attached media file: {os.path.basename(media_filepath)}", "info", "posting")
                         time.sleep(4 if headless else 6)
+                    else:
+                        self.log("⚠️ File input element not found for media attachment.", "warning", "posting")
 
-                post_btn = page.locator('button[data-testid="tweetButton"], button[data-testid="tweetButtonInline"], div[role="button"]:has-text("Post")').first
-                if post_btn.is_enabled(timeout=8000):
-                    post_btn.click()
-                    self.log("🚀 Clicked 'Post' button! Waiting for confirmation...", "success", "posting")
-                    time.sleep(3 if headless else 5)
-                    
+                post_btn = page.locator('button[data-testid="tweetButton"], button[data-testid="tweetButtonInline"], div[data-testid="tweetButton"], div[data-testid="tweetButtonInline"], div[role="button"]:has-text("Post")').first
+                
+                if post_btn.count() > 0:
                     try:
-                        context.storage_state(path=cpath)
-                    except Exception:
-                        pass
+                        post_btn.wait_for(state="visible", timeout=8000)
+                        if post_btn.is_enabled():
+                            post_btn.click(force=True, timeout=5000)
+                            self.log("🚀 Clicked 'Post' button! Waiting for confirmation...", "success", "posting")
+                            time.sleep(4 if headless else 6)
+                            
+                            try:
+                                context.storage_state(path=cpath)
+                            except Exception:
+                                pass
 
-                    browser.close()
-                    return True, "Successfully published tweet directly on X.com!"
-                else:
-                    browser.close()
-                    return False, "Post button remained disabled (check tweet length or media status)."
+                            browser.close()
+                            return True, "Successfully published tweet directly on X.com!"
+                    except Exception as btn_err:
+                        self.log(f"Post button interaction error: {btn_err}", "warning", "posting")
+
+                browser.close()
+                return False, "Post button remained disabled or not clickable (check tweet content/media status)."
 
             except Exception as e:
                 self.log(f"Tweet automation exception: {e}", "error", "error")

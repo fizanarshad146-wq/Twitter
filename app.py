@@ -28,6 +28,8 @@ ACCOUNTS_FILE = os.path.join(DATA_DIR, 'accounts.json')
 HISTORY_FILE = os.path.join(DATA_DIR, 'history.json')
 PROJECTS_FILE = os.path.join(DATA_DIR, 'projects.json')
 GUIDE_FILE = os.path.join(DATA_DIR, 'guide.json')
+LOGS_FILE = os.path.join(DATA_DIR, 'logs.json')
+STATE_FILE = os.path.join(DATA_DIR, 'campaign_state.json')
 PROJECTS_DIR = os.path.join(UPLOAD_DIR, 'projects')
 os.makedirs(PROJECTS_DIR, exist_ok=True)
 
@@ -80,6 +82,43 @@ def save_json(filepath, data):
     except Exception as e:
         print(f"Error saving {filepath}: {e}")
 
+def load_campaign_state():
+    default_state = {
+        "is_running": False,
+        "is_paused": False,
+        "target_account_id": "all",
+        "active_project_id": None,
+        "custom_folder_path": None,
+        "delay_min": 30,
+        "delay_max": 60,
+        "delay_unit": "sec",
+        "caption_mode": "auto_filename",
+        "custom_caption": "",
+        "max_posts_per_day": 0,
+        "dry_run": False,
+        "headless": True,
+        "total_files": 0,
+        "completed": 0,
+        "remaining": 0,
+        "skipped_duplicates": 0,
+        "failed": 0,
+        "current_file": None,
+        "current_account": None,
+        "next_post_time": None
+    }
+    saved = load_json(STATE_FILE, {})
+    default_state.update(saved)
+    default_state["logs"] = load_json(LOGS_FILE, [])
+    return default_state
+
+# Global campaign state loaded from disk
+campaign_state = load_campaign_state()
+
+def save_campaign_state():
+    state_to_save = {k: v for k, v in campaign_state.items() if k != "logs"}
+    save_json(STATE_FILE, state_to_save)
+    save_json(LOGS_FILE, campaign_state.get("logs", []))
+
 def add_log(message, level="info", category="system"):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     log_entry = {
@@ -92,34 +131,9 @@ def add_log(message, level="info", category="system"):
     if len(campaign_state["logs"]) > 500:
         campaign_state["logs"] = campaign_state["logs"][:500]
     print(f"[{timestamp}] [{category.upper()}] [{level.upper()}] {message}")
+    save_json(LOGS_FILE, campaign_state["logs"])
 
 browser_poster = MultiAccountBrowserPoster(log_callback=add_log)
-
-# Global campaign state
-campaign_state = {
-    "is_running": False,
-    "is_paused": False,
-    "target_account_id": "all", # "all" or specific account ID
-    "active_project_id": None,
-    "custom_folder_path": None,
-    "delay_min": 30,
-    "delay_max": 60,
-    "delay_unit": "sec",
-    "caption_mode": "auto_filename", # "auto_filename", "custom", "none", "txt_file"
-    "custom_caption": "",
-    "max_posts_per_day": 0, # 0 = unlimited
-    "dry_run": False,
-    "headless": True,
-    "total_files": 0,
-    "completed": 0,
-    "remaining": 0,
-    "skipped_duplicates": 0,
-    "failed": 0,
-    "current_file": None,
-    "current_account": None,
-    "next_post_time": None,
-    "logs": []
-}
 
 def get_file_hash(filepath_or_content):
     if os.path.exists(filepath_or_content):
@@ -647,6 +661,7 @@ def campaign_control():
         campaign_state["is_paused"] = False
         campaign_state["completed"] = 0
         campaign_state["failed"] = 0
+        save_campaign_state()
         
         poster_thread = threading.Thread(target=posting_worker, daemon=True)
         poster_thread.start()
@@ -654,12 +669,14 @@ def campaign_control():
         
     elif action == "pause":
         campaign_state["is_paused"] = True
+        save_campaign_state()
         add_log("⏸️ Campaign Paused", "warning")
         return jsonify({"message": "Campaign paused"})
         
     elif action == "stop":
         campaign_state["is_running"] = False
         campaign_state["is_paused"] = False
+        save_campaign_state()
         add_log("⏹️ Campaign Stop Requested", "warning")
         return jsonify({"message": "Campaign stopped"})
         
@@ -974,6 +991,7 @@ def run_project_campaign(proj_id):
     campaign_state["is_paused"] = False
     campaign_state["completed"] = 0
     campaign_state["failed"] = 0
+    save_campaign_state()
 
     add_log(f"🚀 Launching Campaign for Project '{proj.get('name')}' (Mode: {'👁️ VISIBLE BROWSER' if is_manual else '🙈 SILENT BACKGROUND'})", "success")
 
@@ -1001,5 +1019,11 @@ def reset_guide():
     return jsonify({"message": "Guide reset to default", "guide": DEFAULT_GUIDE_STEPS})
 
 if __name__ == '__main__':
+    # Auto-resume worker if campaign was running before restart
+    if campaign_state.get("is_running") and poster_thread is None:
+        add_log("🔄 Resuming auto-posting worker thread after server restart...", "info", "system")
+        poster_thread = threading.Thread(target=posting_worker, daemon=True)
+        poster_thread.start()
+
     print("⚡ Starting Twitter Auto Posting Server on http://127.0.0.1:5000")
     app.run(host='127.0.0.1', port=5000, debug=True)

@@ -247,11 +247,15 @@ class MultiAccountBrowserPoster:
             args_list = [
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
                 "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             ]
             if not headless:
                 args_list.append("--start-maximized")
 
+            last_err = ""
             for channel_option in [None, "chrome", "msedge"]:
                 try:
                     kwargs = {
@@ -262,11 +266,20 @@ class MultiAccountBrowserPoster:
                         kwargs["channel"] = channel_option
                     browser = p.chromium.launch(**kwargs)
                     break
-                except Exception:
-                    pass
+                except Exception as b_err:
+                    last_err = str(b_err)
 
             if not browser:
-                return False, "❌ Failed to launch browser process for automated posting."
+                try:
+                    import subprocess
+                    self.log("⚙️ Chromium binary missing on server. Running playwright install chromium...", "warning", "posting")
+                    subprocess.run(["playwright", "install", "chromium"], check=True)
+                    browser = p.chromium.launch(headless=headless, args=args_list)
+                except Exception as install_err:
+                    self.log(f"⚠️ Auto-install chromium attempt failed: {install_err}", "error", "posting")
+
+            if not browser:
+                return False, f"❌ Failed to launch browser process for automated posting: {last_err}"
 
             try:
                 viewport_setting = None if not headless else {"width": 1280, "height": 800}

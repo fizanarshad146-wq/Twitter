@@ -340,35 +340,98 @@ async function deleteAccount(accId) {
   }
 }
 
-// Handle Folder Selection
+// Helper: Upload files with real-time XHR Progress Bar
+function uploadWithXHRProgress(url, files, prefix = 'project') {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    let totalBytes = 0;
+    for (let i = 0; i < files.length; i++) {
+      formData.append('files[]', files[i]);
+      totalBytes += files[i].size || 0;
+    }
+
+    const container = document.getElementById(`${prefix}-upload-progress-container`);
+    const statusText = document.getElementById(`${prefix}-upload-status-text`);
+    const percentText = document.getElementById(`${prefix}-upload-percent-text`);
+    const progressBar = document.getElementById(`${prefix}-upload-progress-bar`);
+    const countText = document.getElementById(`${prefix}-upload-count-text`);
+    const detailText = document.getElementById(`${prefix}-upload-detail-text`);
+
+    if (container) container.style.display = 'block';
+    if (progressBar) progressBar.style.width = '0%';
+    if (percentText) percentText.textContent = '0%';
+    if (countText) countText.textContent = `0 / ${files.length} files`;
+    if (detailText) detailText.textContent = `0 MB / ${(totalBytes / (1024 * 1024)).toFixed(1)} MB`;
+
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const percent = Math.round((e.loaded / e.total) * 100);
+        const loadedMB = (e.loaded / (1024 * 1024)).toFixed(1);
+        const totalMB = (e.total / (1024 * 1024)).toFixed(1);
+        const count = Math.min(files.length, Math.ceil((percent / 100) * files.length));
+
+        if (progressBar) progressBar.style.width = `${percent}%`;
+        if (percentText) percentText.textContent = `${percent}%`;
+        if (statusText) statusText.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Uploading ${files.length} media files...`;
+        if (detailText) detailText.textContent = `${loadedMB} MB / ${totalMB} MB`;
+        if (countText) countText.textContent = `${count} / ${files.length} files`;
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        if (progressBar) progressBar.style.width = '100%';
+        if (percentText) percentText.textContent = '100%';
+        if (statusText) statusText.innerHTML = `<i class="fa-solid fa-circle-check" style="color: var(--green-electro);"></i> Upload Complete! Syncing files...`;
+        setTimeout(() => {
+          if (container) container.style.display = 'none';
+        }, 2500);
+        try {
+          resolve({ ok: true, data: JSON.parse(xhr.responseText) });
+        } catch (err) {
+          resolve({ ok: true, data: {} });
+        }
+      } else {
+        if (statusText) statusText.innerHTML = `<i class="fa-solid fa-circle-xmark" style="color: var(--magenta-electro);"></i> Upload Failed (${xhr.status})`;
+        try {
+          resolve({ ok: false, data: JSON.parse(xhr.responseText) });
+        } catch (err) {
+          resolve({ ok: false, data: { error: `Server HTTP ${xhr.status}` } });
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      if (statusText) statusText.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color: var(--magenta-electro);"></i> Network Error during upload!`;
+      reject(new Error('Network error during upload'));
+    };
+
+    xhr.open('POST', url, true);
+    xhr.send(formData);
+  });
+}
+
+// Handle Folder Selection (Main Post Launcher Upload)
 async function handleFolderSelect(event) {
   const files = event.target.files;
   if (!files || files.length === 0) return;
 
-  const formData = new FormData();
-  for (let i = 0; i < files.length; i++) {
-    formData.append('files[]', files[i]);
-  }
-
   const statusMsg = document.getElementById('upload-status-msg');
-  statusMsg.textContent = '⏳ Processing and uploading posts folder...';
+  if (statusMsg) statusMsg.textContent = '⏳ Initializing folder upload...';
 
   try {
-    const res = await fetch('/api/upload_folder', {
-      method: 'POST',
-      body: formData
-    });
-    const result = await res.json();
-    
+    const res = await uploadWithXHRProgress('/api/upload_folder', files, 'main');
     if (res.ok) {
-      statusMsg.innerHTML = `✅ ${result.message} (${result.imported} new imported, ${result.duplicates} duplicates skipped)`;
+      if (statusMsg) statusMsg.innerHTML = `✅ ${res.data.message} (${res.data.imported} new imported, ${res.data.duplicates} duplicates skipped)`;
       fetchStats();
       fetchHistory();
     } else {
-      statusMsg.textContent = `❌ Upload failed: ${result.error}`;
+      if (statusMsg) statusMsg.textContent = `❌ Upload failed: ${res.data.error || 'Server error'}`;
     }
   } catch (err) {
-    statusMsg.textContent = '❌ Network error during folder upload.';
+    if (statusMsg) statusMsg.textContent = '❌ Network error during folder upload.';
   }
 }
 
@@ -678,13 +741,9 @@ async function saveProject() {
     if (res.ok) {
       const savedProjId = result.id || (result.project && result.project.id);
       if (window.selectedProjectFolderFiles && window.selectedProjectFolderFiles.length > 0 && savedProjId) {
-        statusMsg.innerHTML = `<span style="color: var(--cyan-electro);">⏳ Uploading ${window.selectedProjectFolderFiles.length} media files to project...</span>`;
-        const formData = new FormData();
-        for (let i = 0; i < window.selectedProjectFolderFiles.length; i++) {
-          formData.append('files[]', window.selectedProjectFolderFiles[i]);
-        }
-        await fetch(`/api/projects/${savedProjId}/upload`, { method: 'POST', body: formData });
+        const files = window.selectedProjectFolderFiles;
         window.selectedProjectFolderFiles = null;
+        await uploadWithXHRProgress(`/api/projects/${savedProjId}/upload`, files, 'project');
       }
 
       statusMsg.innerHTML = `<span style="color: var(--green-electro);">✅ Project saved & folder files synced successfully!</span>`;
@@ -764,21 +823,13 @@ function triggerProjectUpload(projId) {
   input.onchange = async (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    const formData = new FormData();
-    for (let i = 0; i < files.length; i++) {
-      formData.append('files[]', files[i]);
-    }
     try {
-      const res = await fetch(`/api/projects/${projId}/upload`, {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
+      const res = await uploadWithXHRProgress(`/api/projects/${projId}/upload`, files, 'project');
       if (res.ok) {
-        alert(`✅ Uploaded ${data.imported} files to project!`);
+        alert(`✅ Uploaded ${res.data.imported || files.length} files to project!`);
         fetchProjects();
       } else {
-        alert(`Upload error: ${data.error}`);
+        alert(`Upload error: ${res.data.error || 'Failed'}`);
       }
     } catch (err) {
       alert('Network error during project upload.');

@@ -235,118 +235,25 @@ class MultiAccountBrowserPoster:
 
     def post_tweet_with_account(self, account_id, text_content, media_filepath=None, headless=True):
         """
-        Launches an isolated CLI subprocess on the main thread with a 180s hard OS timeout.
-        This prevents Playwright sync API deadlocks inside background threads on Linux/Render.
+        Automates creating a tweet on x.com using saved storage_state cookies for a specific account.
+        Ensures thread asyncio loop is properly initialized on Python 3.10+.
         """
         cpath = self.get_account_cookie_path(account_id)
         if not self.has_saved_session(account_id):
             return False, f"❌ No valid session cookies found for account ID {account_id}."
 
-        self.log(f"🌐 Launching isolated automated tweet process (Headless={headless})...", "info", "posting")
-
-        temp_text_path = os.path.join(self.data_dir, f"temp_post_{account_id}_{int(time.time())}.txt")
+        # MANDATORY FOR PYTHON 3.10+ IN THREADS: Ensure thread has an active asyncio event loop
+        import asyncio
         try:
-            with open(temp_text_path, 'w', encoding='utf-8') as f:
-                f.write(text_content or "")
-        except Exception as tf_err:
-            return False, f"Failed to write temp post text file: {tf_err}"
+            asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
-        cli_script = os.path.join(BASE_DIR, 'run_posting_cli.py')
-        cmd = [
-            sys.executable,
-            cli_script,
-            str(account_id),
-            temp_text_path,
-            str(media_filepath or "NONE"),
-            "true" if headless else "false"
-        ]
+        self.log(f"🌐 Initializing browser posting process (Headless={headless})...", "info", "posting")
 
-        import subprocess
-        try:
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding='utf-8',
-                errors='replace'
-            )
+        from playwright.sync_api import sync_playwright
 
-            result_data = {"success": False, "message": "No output received from posting CLI process."}
-            start_time = time.time()
-            max_duration = 180
-
-            while True:
-                if process.poll() is not None:
-                    break
-
-                if time.time() - start_time > max_duration:
-                    process.kill()
-                    self.log("⚠️ Tweet process killed after exceeding 180s maximum duration.", "error", "posting")
-                    break
-
-                line = process.stdout.readline()
-                if line:
-                    line_str = line.strip()
-                    if line_str.startswith("[TELEMETRY:"):
-                        parts = line_str.split("] ", 1)
-                        meta = parts[0].replace("[TELEMETRY:", "").split(":")
-                        level = meta[0] if len(meta) > 0 else "info"
-                        cat = meta[1] if len(meta) > 1 else "posting"
-                        msg = parts[1] if len(parts) > 1 else ""
-                        self.log(msg, level, cat)
-                    elif line_str.startswith("[RESULT_JSON] "):
-                        json_str = line_str.replace("[RESULT_JSON] ", "").strip()
-                        try:
-                            result_data = json.loads(json_str)
-                        except Exception:
-                            pass
-
-                time.sleep(0.1)
-
-            remainder = process.stdout.read()
-            if remainder:
-                for line_str in remainder.splitlines():
-                    line_str = line_str.strip()
-                    if line_str.startswith("[TELEMETRY:"):
-                        parts = line_str.split("] ", 1)
-                        meta = parts[0].replace("[TELEMETRY:", "").split(":")
-                        level = meta[0] if len(meta) > 0 else "info"
-                        cat = meta[1] if len(meta) > 1 else "posting"
-                        msg = parts[1] if len(parts) > 1 else ""
-                        self.log(msg, level, cat)
-                    elif line_str.startswith("[RESULT_JSON] "):
-                        json_str = line_str.replace("[RESULT_JSON] ", "").strip()
-                        try:
-                            result_data = json.loads(json_str)
-                        except Exception:
-                            pass
-
-            if os.path.exists(temp_text_path):
-                try:
-                    os.remove(temp_text_path)
-                except Exception:
-                    pass
-
-            return result_data.get("success", False), result_data.get("message", "Process terminated without result.")
-
-        except Exception as e:
-            if os.path.exists(temp_text_path):
-                try:
-                    os.remove(temp_text_path)
-                except Exception:
-                    pass
-            return False, f"❌ Isolated Subprocess Execution Error: {e}"
-
-    def _post_tweet_direct(self, account_id, text_content, media_filepath=None, headless=True):
-        """
-        Direct Playwright execution run on main thread of CLI worker process.
-        """
-        cpath = self.get_account_cookie_path(account_id)
-        if not self.has_saved_session(account_id):
-            return False, f"❌ No valid session cookies found for account ID {account_id}."
-
-        self.log(f"🌐 Launching automated tweet process (Headless={headless})...", "info", "posting")
         with sync_playwright() as p:
             browser = None
             args_list = [
@@ -363,36 +270,36 @@ class MultiAccountBrowserPoster:
             if not headless:
                 args_list.append("--start-maximized")
 
-            last_err = ""
+            self.log("⚙️ Launching Playwright Chromium instance...", "info", "posting")
+            
             channels_to_try = [None] if sys.platform != "win32" else [None, "chrome", "msedge"]
-
-            self.log("⚙️ Starting Chromium browser instance...", "info", "posting")
+            last_err = ""
 
             for channel_option in channels_to_try:
                 try:
                     kwargs = {
                         "headless": headless,
                         "args": args_list,
-                        "timeout": 20000
+                        "timeout": 15000
                     }
                     if channel_option:
                         kwargs["channel"] = channel_option
                     browser = p.chromium.launch(**kwargs)
-                    self.log("✅ Chromium browser launched successfully.", "info", "posting")
+                    self.log("✅ Chromium browser engine launched successfully.", "info", "posting")
                     break
                 except Exception as b_err:
                     last_err = str(b_err)
-                    self.log(f"Browser launch attempt (channel={channel_option}) failed: {b_err}", "warning", "posting")
+                    self.log(f"⚠️ Browser launch attempt (channel={channel_option}) notice: {b_err}", "warning", "posting")
 
             if not browser:
                 try:
                     import subprocess
                     self.log("⚙️ Chromium binary missing on server. Running playwright install chromium --with-deps...", "warning", "posting")
                     subprocess.run(["playwright", "install", "--with-deps", "chromium"], check=True, timeout=300)
-                    browser = p.chromium.launch(headless=headless, args=args_list, timeout=20000)
+                    browser = p.chromium.launch(headless=headless, args=args_list, timeout=15000)
                     self.log("✅ Chromium browser launched after auto-install.", "info", "posting")
                 except Exception as install_err:
-                    self.log(f"⚠️ Auto-install chromium attempt failed: {install_err}", "error", "posting")
+                    self.log(f"⚠️ Auto-install chromium attempt error: {install_err}", "error", "posting")
 
             if not browser:
                 return False, f"❌ Failed to launch browser process for automated posting: {last_err}"
@@ -400,7 +307,7 @@ class MultiAccountBrowserPoster:
             try:
                 viewport_setting = None if not headless else {"width": 1280, "height": 800}
                 context = browser.new_context(storage_state=cpath, viewport=viewport_setting)
-                # Set hard timeouts to prevent infinite hanging
+                # Hard timeouts on page & actions
                 context.set_default_timeout(15000)
                 context.set_default_navigation_timeout(25000)
 
@@ -424,23 +331,23 @@ class MultiAccountBrowserPoster:
                     except Exception:
                         pass
 
-                # Step 1: Visit home to establish CSRF token and verify login context
-                self.log("Navigating to x.com/home to verify login context...", "info", "posting")
+                # Step 1: Navigating to x.com/home
+                self.log("🌐 Navigating to x.com/home to verify login context...", "info", "posting")
                 page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=25000)
                 time.sleep(3 if headless else 5)
                 _dismiss_overlays()
 
-                # Check if home feed loaded or redirected to login/verification
+                # Step 2: Check URL for login / challenge
                 curr_url = page.url
+                self.log(f"🔍 Current session URL: {curr_url}", "info", "posting")
+                
                 if any(k in curr_url for k in ["x.com/login", "x.com/i/flow/login", "account/access", "challenge", "verify"]):
                     browser.close()
                     reason = "Security verification/challenge prompt detected on X" if "challenge" in curr_url or "access" in curr_url else "Session expired or logged out"
                     return False, f"❌ {reason} for account {account_id} (URL: {curr_url}). Please re-login in Account Manager."
 
-                # Step 2: Locate tweet composer
-                self.log("Opening compose post editor...", "info", "posting")
-                
-                # First try navigating to compose/post
+                # Step 3: Open compose post box
+                self.log("📝 Opening compose post editor...", "info", "posting")
                 try:
                     page.goto("https://x.com/compose/post", wait_until="domcontentloaded", timeout=20000)
                     time.sleep(2)
@@ -459,13 +366,12 @@ class MultiAccountBrowserPoster:
                     pass
 
                 if not textbox:
-                    self.log("Trying fallback inline compose box on home page...", "info", "posting")
+                    self.log("🔍 Trying fallback inline compose box on home page...", "info", "posting")
                     try:
                         page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=20000)
                         time.sleep(2)
                         _dismiss_overlays()
 
-                        # Try clicking floating compose button if visible
                         side_compose = page.locator('a[data-testid="SideNav_NewTweet_Button"]').first
                         if side_compose.count() > 0 and side_compose.is_visible():
                             side_compose.click(force=True, timeout=3000)
@@ -479,9 +385,9 @@ class MultiAccountBrowserPoster:
 
                 if not textbox:
                     curr_url_after = page.url
-                    self.log(f"Session invalid or compose textbox not found for account {account_id}. Current URL: {curr_url_after}", "error", "error")
+                    self.log(f"❌ Compose textbox not found. Page URL: {curr_url_after}", "error", "error")
                     browser.close()
-                    return False, f"❌ Saved session expired or compose textbox not found for account {account_id} (Current URL: {curr_url_after}). Please re-login."
+                    return False, f"❌ Saved session expired or compose textbox not found for account {account_id} (Page URL: {curr_url_after}). Please re-login."
 
                 textbox.click(force=True, timeout=5000)
                 time.sleep(0.5)
@@ -491,7 +397,7 @@ class MultiAccountBrowserPoster:
                         textbox.fill(text_content, timeout=5000)
                     except Exception:
                         page.keyboard.insert_text(text_content)
-                    self.log(f"Entered tweet text ({len(text_content)} chars)", "info", "posting")
+                    self.log(f"✍️ Entered tweet text ({len(text_content)} chars)", "info", "posting")
                     time.sleep(1.5 if headless else 2)
 
                 if media_filepath:
@@ -542,3 +448,4 @@ class MultiAccountBrowserPoster:
                     except Exception:
                         pass
                 return False, f"❌ Playwright Automation Error [{err_type}]: {err_detail}"
+

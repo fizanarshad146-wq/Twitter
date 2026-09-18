@@ -265,6 +265,18 @@ class MultiAccountBrowserPoster:
                 "--no-zygote",
                 "--single-process",
                 "--disable-software-rasterizer",
+                "--disable-extensions",
+                "--disable-background-networking",
+                "--disable-background-timer-throttling",
+                "--disable-breakpad",
+                "--disable-component-update",
+                "--disable-domain-reliability",
+                "--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process,Translate,MediaRouter",
+                "--disable-ipc-flooding-protection",
+                "--disable-renderer-backgrounding",
+                "--metrics-recording-only",
+                "--mute-audio",
+                "--js-flags=--max-old-space-size=256",
                 "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             ]
             if not headless:

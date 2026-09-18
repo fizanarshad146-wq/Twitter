@@ -235,7 +235,112 @@ class MultiAccountBrowserPoster:
 
     def post_tweet_with_account(self, account_id, text_content, media_filepath=None, headless=True):
         """
-        Automates creating a tweet on x.com using saved storage_state cookies for a specific account.
+        Launches an isolated CLI subprocess on the main thread with a 180s hard OS timeout.
+        This prevents Playwright sync API deadlocks inside background threads on Linux/Render.
+        """
+        cpath = self.get_account_cookie_path(account_id)
+        if not self.has_saved_session(account_id):
+            return False, f"❌ No valid session cookies found for account ID {account_id}."
+
+        self.log(f"🌐 Launching isolated automated tweet process (Headless={headless})...", "info", "posting")
+
+        temp_text_path = os.path.join(self.data_dir, f"temp_post_{account_id}_{int(time.time())}.txt")
+        try:
+            with open(temp_text_path, 'w', encoding='utf-8') as f:
+                f.write(text_content or "")
+        except Exception as tf_err:
+            return False, f"Failed to write temp post text file: {tf_err}"
+
+        cli_script = os.path.join(BASE_DIR, 'run_posting_cli.py')
+        cmd = [
+            sys.executable,
+            cli_script,
+            str(account_id),
+            temp_text_path,
+            str(media_filepath or "NONE"),
+            "true" if headless else "false"
+        ]
+
+        import subprocess
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding='utf-8',
+                errors='replace'
+            )
+
+            result_data = {"success": False, "message": "No output received from posting CLI process."}
+            start_time = time.time()
+            max_duration = 180
+
+            while True:
+                if process.poll() is not None:
+                    break
+
+                if time.time() - start_time > max_duration:
+                    process.kill()
+                    self.log("⚠️ Tweet process killed after exceeding 180s maximum duration.", "error", "posting")
+                    break
+
+                line = process.stdout.readline()
+                if line:
+                    line_str = line.strip()
+                    if line_str.startswith("[TELEMETRY:"):
+                        parts = line_str.split("] ", 1)
+                        meta = parts[0].replace("[TELEMETRY:", "").split(":")
+                        level = meta[0] if len(meta) > 0 else "info"
+                        cat = meta[1] if len(meta) > 1 else "posting"
+                        msg = parts[1] if len(parts) > 1 else ""
+                        self.log(msg, level, cat)
+                    elif line_str.startswith("[RESULT_JSON] "):
+                        json_str = line_str.replace("[RESULT_JSON] ", "").strip()
+                        try:
+                            result_data = json.loads(json_str)
+                        except Exception:
+                            pass
+
+                time.sleep(0.1)
+
+            remainder = process.stdout.read()
+            if remainder:
+                for line_str in remainder.splitlines():
+                    line_str = line_str.strip()
+                    if line_str.startswith("[TELEMETRY:"):
+                        parts = line_str.split("] ", 1)
+                        meta = parts[0].replace("[TELEMETRY:", "").split(":")
+                        level = meta[0] if len(meta) > 0 else "info"
+                        cat = meta[1] if len(meta) > 1 else "posting"
+                        msg = parts[1] if len(parts) > 1 else ""
+                        self.log(msg, level, cat)
+                    elif line_str.startswith("[RESULT_JSON] "):
+                        json_str = line_str.replace("[RESULT_JSON] ", "").strip()
+                        try:
+                            result_data = json.loads(json_str)
+                        except Exception:
+                            pass
+
+            if os.path.exists(temp_text_path):
+                try:
+                    os.remove(temp_text_path)
+                except Exception:
+                    pass
+
+            return result_data.get("success", False), result_data.get("message", "Process terminated without result.")
+
+        except Exception as e:
+            if os.path.exists(temp_text_path):
+                try:
+                    os.remove(temp_text_path)
+                except Exception:
+                    pass
+            return False, f"❌ Isolated Subprocess Execution Error: {e}"
+
+    def _post_tweet_direct(self, account_id, text_content, media_filepath=None, headless=True):
+        """
+        Direct Playwright execution run on main thread of CLI worker process.
         """
         cpath = self.get_account_cookie_path(account_id)
         if not self.has_saved_session(account_id):

@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>X / Twitter Auto Posting Tool - Electro Dashboard</title>
+  <!-- Google Fonts & FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/electro.css') }}">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <!-- Top Navbar -->
+  <header class="navbar">
+    <div class="brand">
+      <div class="brand-logo">
+        <i class="fa-brands fa-x-twitter"></i>
+      </div>
+      <div class="brand-text">
+        <h1>X Electro Poster</h1>
+        <p>Multi-Account Direct Auto Posting System</p>
+      </div>
+    </div>
+    
+    <div class="status-badge" id="nav-status-badge">
+      <div class="status-dot" id="nav-status-dot"></div>
+      <span id="nav-status-text">Engine Idle</span>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- Tab Bar -->
+    <nav class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('dashboard')">
+        <i class="fa-solid fa-chart-line"></i> Live Dashboard
+      </button>
+      <button class="tab-btn" onclick="switchTab('campaign')">
+        <i class="fa-solid fa-paper-plane"></i> Post Launcher
+      </button>
+      <button class="tab-btn" onclick="switchTab('projects')">
+        <i class="fa-solid fa-folder-tree"></i> Account Projects & Folders
+      </button>
+      <button class="tab-btn" onclick="switchTab('accounts')">
+        <i class="fa-solid fa-users"></i> Multi-Account Manager
+      </button>
+      <button class="tab-btn" onclick="switchTab('history')">
+        <i class="fa-solid fa-list-check"></i> Post Queue & History
+      </button>
+      <button class="tab-btn" onclick="switchTab('logs')">
+        <i class="fa-solid fa-terminal"></i> Live Telemetry Console
+      </button>
+      <button class="tab-btn" onclick="switchTab('guide')">
+        <i class="fa-solid fa-book-bookmark"></i> User Guide
+      </button>
+    </nav>
+
+    <!-- TAB 1: LIVE DASHBOARD -->
+    <div id="tab-dashboard" class="tab-pane active">
+      
+      <!-- Quick Stats -->
+      <div class="grid-stats">
+        <div class="stat-box remaining">
+          <div class="stat-icon"><i class="fa-solid fa-folder-open"></i></div>
+          <div class="stat-info">
+            <h4>Folder Remaining</h4>
+            <div class="stat-value" id="stat-remaining">0</div>
+          </div>
+        </div>
+
+        <div class="stat-box posted">
+          <div class="stat-icon"><i class="fa-solid fa-circle-check"></i></div>
+          <div class="stat-info">
+            <h4>Total Posted</h4>
+            <div class="stat-value" id="stat-posted">0</div>
+          </div>
+        </div>
+
+        <div class="stat-box skipped">
+          <div class="stat-icon"><i class="fa-solid fa-copy"></i></div>
+          <div class="stat-info">
+            <h4>Duplicates Filtered</h4>
+            <div class="stat-value" id="stat-skipped">0</div>
+          </div>
+        </div>
+
+        <div class="stat-box failed">
+          <div class="stat-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+          <div class="stat-info">
+            <h4>Failed / Errors</h4>
+            <div class="stat-value" id="stat-failed">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Graph & Quick Stream Grid -->
+      <div class="dashboard-grid">
+        <!-- Live Velocity Graph Card -->
+        <div class="electro-card">
+          <div class="card-title">
+            <i class="fa-solid fa-chart-area"></i> Real-time Posting Velocity Graph
+          </div>
+          <div class="chart-container">
+            <canvas id="postingChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Quick Activity Stream Card -->
+        <div class="electro-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div class="card-title" style="margin-bottom: 0;">
+              <i class="fa-solid fa-bolt"></i> Activity Stream
+            </div>
+            <button class="btn-electro btn-outline" style="padding: 4px 12px; font-size: 0.78rem;" onclick="switchTab('logs')">
+              Full Console <i class="fa-solid fa-up-right-and-down-left-from-center"></i>
+            </button>
+          </div>
+
+          <div class="log-box" id="dashboard-logs-container">
+            <div class="log-item info">
+              <span class="time">[System]</span>
+              <span class="msg">Initialized Multi-Account X Auto Posting Engine. Ready!</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TAB 2: POST LAUNCHER & FOLDER ATTACH -->
+    <div id="tab-campaign" class="tab-pane">
+      <div class="dashboard-grid">
+        
+        <!-- Left: Upload & Config -->
+        <div>
+          <!-- Folder Dropzone -->
+          <div class="electro-card">
+            <div class="card-title">
+              <i class="fa-solid fa-folder-plus"></i> Attach Posts Folder (Images / Videos / TXT)
+            </div>
+            
+            <div class="dropzone" id="folder-dropzone" onclick="document.getElementById('folder-input').click()">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+              <h3>Click to Attach Posts Folder</h3>
+              <p>Supports Batch Media (PNG, JPG, MP4) & Text (.txt) Files</p>
+              <input type="file" id="folder-input" webkitdirectory directory multiple style="display: none;" onchange="handleFolderSelect(event)">
+            </div>
+            
+            <div id="upload-status-msg" style="margin-top: 10px; font-weight: 600; text-align: center; color: var(--cyan-electro);"></div>
+          </div>
+
+          <!-- Text File Creator -->
+          <div class="electro-card">
+            <div class="card-title">
+              <i class="fa-solid fa-file-pen"></i> Add Single Text Post (.txt)
+            </div>
+            <div class="form-group">
+              <label>Post Title / File Identifier</label>
+              <input type="text" id="txt-title" class="input-electro" placeholder="e.g. Morning_Announcement">
+            </div>
+            <div class="form-group">
+              <label>Tweet Text Content</label>
+              <textarea id="txt-content" class="input-electro" placeholder="Write tweet text here..."></textarea>
+            </div>
+            <button class="btn-electro btn-outline" onclick="createSingleTextPost()">
+              <i class="fa-solid fa-plus"></i> Save Text Post to Folder
+            </button>
+          </div>
+        </div>
+
+        <!-- Right: Account Selector & Launcher Controls -->
+        <div>
+          <div class="electro-card">
+            <div class="card-title">
+              <i class="fa-solid fa-sliders"></i> Campaign & Account Controls
+            </div>
+
+            <!-- Load From Project Option -->
+            <div class="form-group">
+              <label><i class="fa-solid fa-folder-tree"></i> Load From Saved Account Project (Optional)</label>
+              <select id="launcher-project-select" class="input-electro" style="cursor: pointer;" onchange="handleLauncherProjectSelect(this.value)">
+                <option value="">-- Use Default Upload Folder --</option>
+              </select>
+            </div>
+
+            <!-- Target Account Selector -->
+            <div class="form-group">
+              <label>Select Posting Account / Rotation</label>
+              <select id="target-account-select" class="input-electro" style="cursor: pointer;">
+                <option value="all">🔄 All Active Accounts (Multi-Rotation)</option>
+              </select>
+            </div>
+
+            <!-- Tweet Caption / Title Strategy -->
+            <div class="form-group" style="margin-top: 12px;">
+              <label style="color: var(--cyan-electro); font-weight: 700; margin-bottom: 6px; display: block;">
+                <i class="fa-solid fa-heading"></i> Tweet Title / Caption Strategy:
+              </label>
+              <select id="caption-mode-select" class="input-electro" style="cursor: pointer;" onchange="toggleCustomCaptionInput(this.value, 'custom-caption-container')">
+                <option value="auto_filename">📝 Title According to Post (Clean filename e.g. 001_Crypto_News -> Crypto News)</option>
+                <option value="custom">✍️ Fixed Custom Title (Same caption text for all posts)</option>
+                <option value="none">🚫 No Title (Upload media only without caption text)</option>
+                <option value="txt_file">📄 Title from .txt File (Use matching 001.txt if present)</option>
+              </select>
+            </div>
+
+            <div class="form-group" id="custom-caption-container" style="display: none; margin-top: 8px;">
+              <label>Custom Tweet Title / Caption Text</label>
+              <textarea id="custom-caption-text" class="input-electro" rows="2" placeholder="Enter custom caption (e.g. Check out our latest post! 🚀 #Viral)"></textarea>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px;">
+              <div class="form-group">
+                <label>Min Delay</label>
+                <input type="number" id="delay-min" class="input-electro" value="30" min="1">
+              </div>
+              <div class="form-group">
+                <label>Max Delay</label>
+                <input type="number" id="delay-max" class="input-electro" value="60" min="1">
+              </div>
+              <div class="form-group">
+                <label>Delay Unit</label>
+                <select id="delay-unit" class="input-electro" style="cursor: pointer;">
+                  <option value="sec">Seconds (s)</option>
+                  <option value="min">Minutes (m)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Daily Post Limit (24h Window) -->
+            <div class="form-group" style="margin-top: 10px;">
+              <label style="color: var(--cyan-electro); font-weight: 700;">
+                <i class="fa-solid fa-gauge-high"></i> Max Posts Limit per 24 Hours (Daily Limit)
+              </label>
+              <input type="number" id="max-posts-day" class="input-electro" value="0" min="0" placeholder="0 = Unlimited posts per day">
+              <small style="color: var(--text-muted); font-size: 0.76rem;">Set max allowed posts in a rolling 24-hour period (e.g. 20 posts/day to prevent account bans). 0 = No limit.</small>
+            </div>
+
+            <!-- Uploading Browser Mode Selection -->
+            <div class="form-group" style="margin-top: 15px;">
+              <label style="color: var(--cyan-electro); font-weight: 700; margin-bottom: 8px; display: block;">
+                <i class="fa-solid fa-eye"></i> Uploading Browser Visibility Mode:
+              </label>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <label style="display: flex; align-items: center; gap: 8px; background: rgba(0, 243, 255, 0.05); padding: 10px; border-radius: 8px; border: 1px solid var(--border-neon); cursor: pointer;">
+                  <input type="radio" name="browser-mode-radio" value="manual" id="mode-manual-radio">
+                  <div>
+                    <strong style="color: #fff; font-size: 0.85rem;">👁️ Manual Browser</strong>
+                    <div style="font-size: 0.72rem; color: var(--text-muted);">Watch browser open live</div>
+                  </div>
+                </label>
+
+                <label style="display: flex; align-items: center; gap: 8px; background: rgba(0, 243, 255, 0.05); padding: 10px; border-radius: 8px; border: 1px solid var(--border-neon); cursor: pointer;">
+                  <input type="radio" name="browser-mode-radio" value="silent" id="mode-silent-radio" checked>
+                  <div>
+                    <strong style="color: #fff; font-size: 0.85rem;">🙈 Silent Background</strong>
+                    <div style="font-size: 0.72rem; color: var(--text-muted);">Hidden background execution</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 15px; background: rgba(0, 243, 255, 0.04); padding: 12px; border-radius: 8px; border: 1px dashed var(--cyan-electro);">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" id="dry-run-checkbox" style="width: 18px; height: 18px; accent-color: var(--cyan-electro);">
+                <label for="dry-run-checkbox" style="margin-bottom: 0; cursor: pointer; color: var(--cyan-electro); font-weight: 700;">
+                  🧪 Enable Simulation Mode
+                </label>
+              </div>
+              <p style="margin: 6px 0 0 28px; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
+                <strong>What is Simulation Mode?</strong> Tests post queues, interval delays, and telemetry logs safely without launching real Chrome browsers or tweeting to Twitter.
+              </p>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid var(--border-neon); margin: 1.5rem 0;">
+
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+              <button class="btn-electro btn-cyan" onclick="controlCampaign('start')">
+                <i class="fa-solid fa-play"></i> Start Auto Posting Engine
+              </button>
+              
+              <button class="btn-electro btn-outline" onclick="controlCampaign('pause')">
+                <i class="fa-solid fa-pause"></i> Pause Engine
+              </button>
+
+              <button class="btn-electro btn-magenta" onclick="controlCampaign('stop')">
+                <i class="fa-solid fa-stop"></i> Stop & Reset Engine
+              </button>
+              
+              <button class="btn-electro btn-outline" onclick="clearUploadFolder()" style="margin-top: 10px;">
+                <i class="fa-solid fa-trash-can"></i> Clear Posts Folder
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- TAB: ACCOUNT PROJECTS & FOLDERS -->
+    <div id="tab-projects" class="tab-pane">
+      <div class="dashboard-grid">
+        
+        <!-- Left: Create / Edit Project Card -->
+        <div class="electro-card">
+          <div class="card-title">
+            <i class="fa-solid fa-folder-plus"></i> Create Account Project & Folder Assignment
+          </div>
+
+          <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.2rem; line-height: 1.5;">
+            Assign a dedicated media folder to a specific Twitter account and choose whether to watch uploads live in a <strong>Manual Browser</strong> or run <strong>Silently</strong>.
+          </p>
+
+          <input type="hidden" id="project-id-input">
+
+          <div class="form-group">
+            <label>Project Name</label>
+            <input type="text" id="project-name-input" class="input-electro" placeholder="e.g. Account_1789 Crypto Posts">
+          </div>
+
+          <div class="form-group">
+            <label>Assigned Twitter Account</label>
+            <select id="project-account-select" class="input-electro" style="cursor: pointer;">
+              <option value="all">🔄 All Active Accounts (Rotation)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Dedicated Folder Path (Optional)</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="project-folder-input" class="input-electro" style="flex: 1;" placeholder="e.g. E:\MyMediaFolder or click Browse">
+              <button type="button" class="btn-electro btn-outline" style="padding: 8px 14px; white-space: nowrap;" onclick="browseProjectFolder()">
+                <i class="fa-solid fa-folder-open"></i> Browse
+              </button>
+            </div>
+            <small style="color: var(--text-muted); font-size: 0.78rem;">Click Browse to pick folder from your computer, or leave blank to auto-create.</small>
+          </div>
+
+          <!-- Project Tweet Caption / Title Strategy -->
+          <div class="form-group" style="margin-top: 12px;">
+            <label style="color: var(--cyan-electro); font-weight: 700; margin-bottom: 6px; display: block;">
+              <i class="fa-solid fa-heading"></i> Project Title / Caption Strategy:
+            </label>
+            <select id="project-caption-mode-select" class="input-electro" style="cursor: pointer;" onchange="toggleCustomCaptionInput(this.value, 'project-custom-caption-container')">
+              <option value="auto_filename">📝 Title According to Post (Clean filename e.g. 001_Crypto_News -> Crypto News)</option>
+              <option value="custom">✍️ Fixed Custom Title (Same caption text for all posts)</option>
+              <option value="none">🚫 No Title (Upload media only without caption text)</option>
+              <option value="txt_file">📄 Title from .txt File (Use matching 001.txt if present)</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="project-custom-caption-container" style="display: none; margin-top: 8px;">
+            <label>Custom Tweet Title / Caption Text</label>
+            <textarea id="project-custom-caption-text" class="input-electro" rows="2" placeholder="Enter custom caption (e.g. Check out our latest post! 🚀 #Viral)"></textarea>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px;">
+            <label style="color: var(--cyan-electro); font-weight: 700; margin-bottom: 8px; display: block;">
+              <i class="fa-solid fa-eye"></i> Uploading Browser Visibility Option:
+            </label>
+            <select id="project-mode-select" class="input-electro" style="cursor: pointer;">
+              <option value="manual">👁️ Manual Mode - Open Visible Browser (Watch Live)</option>
+              <option value="silent">🙈 Silent Mode - Hidden Background Execution</option>
+            </select>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px;">
+            <div class="form-group">
+              <label>Min Delay</label>
+              <input type="number" id="project-delay-min" class="input-electro" value="30" min="1">
+            </div>
+            <div class="form-group">
+              <label>Max Delay</label>
+              <input type="number" id="project-delay-max" class="input-electro" value="60" min="1">
+            </div>
+            <div class="form-group">
+              <label>Unit</label>
+              <select id="project-delay-unit" class="input-electro" style="cursor: pointer;">
+                <option value="sec">Seconds (s)</option>
+                <option value="min">Minutes (m)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 10px;">
+            <label style="color: var(--cyan-electro); font-weight: 700;">
+              <i class="fa-solid fa-gauge-high"></i> Max Posts Limit per 24 Hours
+            </label>
+            <input type="number" id="project-max-posts-day" class="input-electro" value="0" min="0" placeholder="0 = Unlimited posts">
+          </div>
+
+          <button class="btn-electro btn-cyan" style="width: 100%; margin-top: 15px; padding: 12px;" onclick="saveProject()">
+            <i class="fa-solid fa-floppy-disk"></i> Save Project & Assign Folder
+          </button>
+          
+          <div id="project-status-msg" style="margin-top: 10px; text-align: center; font-weight: 600;"></div>
+        </div>
+
+        <!-- Right: Saved Projects List Card -->
+        <div class="electro-card">
+          <div class="card-title">
+            <i class="fa-solid fa-folder-tree"></i> Configured Account Projects
+          </div>
+
+          <div class="table-responsive">
+            <table class="electro-table">
+              <thead>
+                <tr>
+                  <th>Project & Folder</th>
+                  <th>Assigned Account</th>
+                  <th>Mode</th>
+                  <th>Posts</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="projects-table-body">
+                <tr>
+                  <td colspan="5" style="text-align: center; color: var(--text-muted);">No projects created yet. Create one on the left!</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- TAB 3: MULTI-ACCOUNT MANAGER -->
+    <div id="tab-accounts" class="tab-pane">
+      <div class="dashboard-grid">
+        
+        <!-- Add Account Card (1-Click Visible Browser Window Login) -->
+        <div class="electro-card">
+          <div class="card-title">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> 1-Click Login & Account Auth (Local Desktop)
+          </div>
+
+          <div style="background: rgba(0, 240, 255, 0.08); border-left: 3px solid var(--cyan-electro); padding: 10px 14px; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; color: #b8e9ff;">
+            <strong>ℹ️ Note for Render / Cloud Users:</strong> 1-Click Login pops up Chrome on your <strong>Local Desktop PC screen</strong>. If you are accessing this site via Render/Cloud, use <strong>Manual Session Cookie Import</strong> on the right to attach accounts!
+          </div>
+
+          <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.2rem; line-height: 1.6;">
+            Click <strong>"1-Click Login to Twitter"</strong> below to open Chrome on your desktop screen. Log into Twitter inside that window and session cookies are captured automatically!
+          </p>
+
+          <div class="form-group">
+            <label>Account Label / Name (Optional)</label>
+            <input type="text" id="interactive-label-input" class="input-electro" placeholder="e.g. MyPersonalTwitter (leave blank to auto-detect handle)">
+          </div>
+
+          <button class="btn-electro btn-cyan" style="width: 100%; padding: 14px; font-size: 1rem; margin-bottom: 15px;" onclick="handleInteractiveLoginAdd()">
+            <i class="fa-solid fa-bolt"></i> 🌐 1-Click Login to Twitter / X
+          </button>
+
+          <div id="login-status-msg" style="margin-top: 10px; text-align: center; font-weight: 600;"></div>
+        </div>
+
+        <!-- Manual Cookie / Auth Token Card (For Render & Cloud) -->
+        <div class="electro-card">
+          <div class="card-title">
+            <i class="fa-solid fa-key"></i> Manual Auth Token / Session Import (Cloud / Render)
+          </div>
+
+          <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+            Paste your Twitter <code>auth_token</code> cookie value or exported session JSON below to activate an account on Cloud server without GUI.
+          </p>
+
+          <div class="form-group">
+            <label>Account Handle / Label</label>
+            <input type="text" id="manual-account-name" class="input-electro" placeholder="e.g. @STORY_VIEWER">
+          </div>
+
+          <div class="form-group">
+            <label>Auth Token / Cookie JSON</label>
+            <textarea id="manual-cookie-input" class="input-electro" style="height: 75px; font-family: monospace; font-size: 0.82rem;" placeholder="Paste auth_token value (e.g. c0f5206872...) OR Cookie JSON list"></textarea>
+          </div>
+
+          <button class="btn-electro btn-outline" style="width: 100%; padding: 10px;" onclick="handleManualCookieAdd()">
+            <i class="fa-solid fa-floppy-disk"></i> Save Session Cookie & Attach Account
+          </button>
+        </div>
+
+        <!-- Accounts List Card -->
+        <div class="electro-card" style="grid-column: 1 / -1;">
+          <div class="card-title">
+            <i class="fa-solid fa-users-gear"></i> Configured Accounts List
+          </div>
+
+          <div class="table-responsive">
+            <table class="electro-table">
+              <thead>
+                <tr>
+                  <th>Account</th>
+                  <th>Session Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="accounts-table-body">
+                <tr>
+                  <td colspan="3" style="text-align: center; color: var(--text-muted);">No Twitter accounts added yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- TAB 4: QUEUE & HISTORY LOGS -->
+    <div id="tab-history" class="tab-pane">
+      <div class="electro-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; flex-wrap: wrap; gap: 10px;">
+          <div class="card-title" style="margin-bottom: 0;">
+            <i class="fa-solid fa-clock-rotate-left"></i> Completed & Queued Posts Log
+          </div>
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <button class="log-filter-pill active" id="history-filter-all" onclick="filterHistoryStatus('all')">All Items 🌐</button>
+            <button class="log-filter-pill" id="history-filter-queued" onclick="filterHistoryStatus('queued')">⏳ Queued Posts</button>
+            <button class="log-filter-pill" id="history-filter-posted" onclick="filterHistoryStatus('posted')">✅ Completed</button>
+            <button class="log-filter-pill" id="history-filter-failed" onclick="filterHistoryStatus('failed')">❌ Failed</button>
+            
+            <button class="btn-electro btn-outline" style="padding: 6px 12px; font-size: 0.78rem;" onclick="clearUploadFolder()">
+              <i class="fa-solid fa-folder-minus"></i> Clear Queue Folder
+            </button>
+            <button class="btn-electro btn-outline" style="padding: 6px 12px; font-size: 0.78rem;" onclick="clearHistoryLogs()">
+              <i class="fa-solid fa-broom"></i> Clear History Logs
+            </button>
+            <button class="btn-electro btn-magenta" style="padding: 6px 12px; font-size: 0.78rem;" onclick="clearAllLogsAndQueue()">
+              <i class="fa-solid fa-trash-can"></i> Clear All (History + Queue)
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="electro-table">
+            <thead>
+              <tr>
+                <th>File / Content</th>
+                <th>Account</th>
+                <th>Timestamp</th>
+                <th>Status</th>
+                <th>Post Outcome</th>
+              </tr>
+            </thead>
+            <tbody id="history-table-body">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-muted);">No posting history recorded yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: DEDICATED FULL-SCREEN LIVE TELEMETRY CONSOLE TAB -->
+    <div id="tab-logs" class="tab-pane">
+      <div class="electro-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; flex-wrap: wrap; gap: 12px;">
+          <div class="card-title" style="margin-bottom: 0;">
+            <i class="fa-solid fa-terminal"></i> Full-Screen Live Telemetry & Console Log Stream
+          </div>
+          
+          <div style="display: flex; gap: 10px;">
+            <button class="btn-electro btn-outline" style="padding: 8px 16px; font-size: 0.82rem;" onclick="copyFilteredLogs()">
+              <i class="fa-solid fa-copy"></i> Copy Filtered Logs
+            </button>
+            <button class="btn-electro btn-cyan" style="padding: 8px 16px; font-size: 0.82rem;" onclick="copyAllLogs()">
+              <i class="fa-solid fa-clone"></i> Copy All Telemetry
+            </button>
+          </div>
+        </div>
+
+        <!-- Category Filter Pills -->
+        <div style="display: flex; gap: 10px; margin-bottom: 1.2rem; overflow-x: auto; padding-bottom: 6px;">
+          <button class="log-filter-pill active" onclick="filterLogCategory('all')">All Logs 🌐</button>
+          <button class="log-filter-pill" onclick="filterLogCategory('posting')">Posting Events 🚀</button>
+          <button class="log-filter-pill" onclick="filterLogCategory('account')">Accounts & Auth 🔑</button>
+          <button class="log-filter-pill" onclick="filterLogCategory('system')">System Engine ⚡</button>
+          <button class="log-filter-pill" onclick="filterLogCategory('error')">Errors & Failures ❌</button>
+        </div>
+
+        <!-- Large Full-Screen Console Box -->
+        <div class="log-box full-screen-log" id="full-logs-container">
+          <div class="log-item info">
+            <span class="time">[System]</span>
+            <span class="msg">[SYSTEM] Initialized Multi-Account X Auto Posting Engine. Ready!</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 6: STEP-BY-STEP SETUP GUIDE (EDITABLE) -->
+    <div id="tab-guide" class="tab-pane">
+      <div class="electro-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; flex-wrap: wrap; gap: 10px;">
+          <div class="card-title" style="margin-bottom: 0;">
+            <i class="fa-solid fa-graduation-cap"></i> Complete User Guide & Workflow Instructions
+          </div>
+
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-electro btn-cyan" style="padding: 6px 14px; font-size: 0.82rem;" id="edit-guide-btn" onclick="toggleEditGuideMode(true)">
+              <i class="fa-solid fa-pen-to-square"></i> Edit Guide
+            </button>
+            <button class="btn-electro btn-outline" style="padding: 6px 14px; font-size: 0.82rem;" onclick="resetGuideToDefault()">
+              <i class="fa-solid fa-rotate-left"></i> Reset Default
+            </button>
+          </div>
+        </div>
+
+        <!-- Rendered Guide Steps Container -->
+        <div id="guide-steps-container">
+          <!-- Populated dynamically by app.js -->
+        </div>
+
+        <!-- Guide Edit Form (Hidden by default) -->
+        <div id="guide-edit-container" style="display: none; margin-top: 15px; background: rgba(0, 0, 0, 0.2); padding: 15px; border-radius: 8px; border: 1px dashed var(--border-neon);">
+          <h4 style="color: var(--cyan-electro); margin-bottom: 12px;"><i class="fa-solid fa-pen-to-square"></i> Edit User Guide Steps</h4>
+          
+          <div id="guide-steps-editor-list" style="display: flex; flex-direction: column; gap: 15px;">
+            <!-- Step editor items generated by JS -->
+          </div>
+
+          <button class="btn-electro btn-outline" style="margin-top: 15px; padding: 8px 16px; font-size: 0.82rem;" onclick="addGuideStepEditorRow()">
+            <i class="fa-solid fa-plus"></i> Add New Step
+          </button>
+
+          <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button class="btn-electro btn-cyan" onclick="saveEditedGuide()">
+              <i class="fa-solid fa-floppy-disk"></i> Save Guide Changes
+            </button>
+            <button class="btn-electro btn-outline" onclick="toggleEditGuideMode(false)">
+              <i class="fa-solid fa-xmark"></i> Cancel
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Attached Project Files Inspection Modal -->
+  <div id="project-files-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(5, 8, 15, 0.85); backdrop-filter: blur(8px); z-index: 9999; justify-content: center; align-items: center;">
+    <div class="electro-card" style="width: 90%; max-width: 800px; max-height: 85vh; display: flex; flex-direction: column; border: 1px solid var(--cyan-electro); box-shadow: 0 0 30px rgba(0, 243, 255, 0.2);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 id="modal-project-title" style="color: var(--cyan-electro); margin: 0;">
+          <i class="fa-solid fa-folder-open"></i> Attached Project Files
+        </h3>
+        <button class="btn-electro btn-outline" onclick="closeProjectFilesModal()" style="padding: 4px 12px; font-size: 0.9rem;">
+          <i class="fa-solid fa-xmark"></i> Close
+        </button>
+      </div>
+
+      <p id="modal-project-path" style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 1rem; word-break: break-all;"></p>
+
+      <div style="flex: 1; overflow-y: auto;">
+        <table class="electro-table">
+          <thead>
+            <tr>
+              <th>File Name</th>
+              <th>Type</th>
+              <th>Size</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="modal-files-table-body">
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--text-muted);">Loading folder files...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

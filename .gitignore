@@ -1,0 +1,14 @@
+# Python bytecode & cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Browser Profile (Contains thousands of cache files & session logs - DO NOT UPLOAD TO GITHUB)
+data/browser_profile/
+data/browser_launch.log
+data/auth_cookies.json
+data/cookies_*.json
+
+# Windows / OS files
+desktop.ini
+Thumbs.db

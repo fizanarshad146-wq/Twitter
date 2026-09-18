@@ -722,6 +722,22 @@ def clear_folder():
     add_log(f"🗑️ Cleared {removed} files from post folder.", "warning")
     return jsonify({"message": f"Cleared {removed} files"})
 
+@app.route('/api/clear_all', methods=['DELETE'])
+def clear_all():
+    save_json(HISTORY_FILE, [])
+    target_dir = campaign_state.get("custom_folder_path") or UPLOAD_DIR
+    files = glob.glob(os.path.join(target_dir, "*"))
+    removed = 0
+    for f in files:
+        if os.path.isfile(f):
+            try:
+                os.remove(f)
+                removed += 1
+            except Exception:
+                pass
+    add_log(f"🧹 Cleared history logs and removed {removed} queue files.", "warning")
+    return jsonify({"message": f"Cleared history logs and {removed} queue files successfully."})
+
 @app.route('/api/projects', methods=['GET', 'POST'])
 def manage_projects():
     projects = load_json(PROJECTS_FILE, [])

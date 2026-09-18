@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: x-auto-posting
+    env: python
+    buildCommand: bash build.sh
+    startCommand: gunicorn --workers 1 --threads 8 --timeout 120 app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: 0

@@ -250,6 +250,9 @@ class MultiAccountBrowserPoster:
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
+                "--no-zygote",
+                "--single-process",
+                "--disable-software-rasterizer",
                 "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             ]
             if not headless:
@@ -258,25 +261,31 @@ class MultiAccountBrowserPoster:
             last_err = ""
             channels_to_try = [None] if sys.platform != "win32" else [None, "chrome", "msedge"]
 
+            self.log("⚙️ Starting Chromium browser instance...", "info", "posting")
+
             for channel_option in channels_to_try:
                 try:
                     kwargs = {
                         "headless": headless,
-                        "args": args_list
+                        "args": args_list,
+                        "timeout": 20000
                     }
                     if channel_option:
                         kwargs["channel"] = channel_option
                     browser = p.chromium.launch(**kwargs)
+                    self.log("✅ Chromium browser launched successfully.", "info", "posting")
                     break
                 except Exception as b_err:
                     last_err = str(b_err)
+                    self.log(f"Browser launch attempt (channel={channel_option}) failed: {b_err}", "warning", "posting")
 
             if not browser:
                 try:
                     import subprocess
                     self.log("⚙️ Chromium binary missing on server. Running playwright install chromium --with-deps...", "warning", "posting")
                     subprocess.run(["playwright", "install", "--with-deps", "chromium"], check=True, timeout=300)
-                    browser = p.chromium.launch(headless=headless, args=args_list)
+                    browser = p.chromium.launch(headless=headless, args=args_list, timeout=20000)
+                    self.log("✅ Chromium browser launched after auto-install.", "info", "posting")
                 except Exception as install_err:
                     self.log(f"⚠️ Auto-install chromium attempt failed: {install_err}", "error", "posting")
 

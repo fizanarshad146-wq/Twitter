@@ -523,12 +523,47 @@ async function browseProjectFolder() {
     const data = await res.json();
     if (res.ok && data.folder_path) {
       document.getElementById('project-folder-input').value = data.folder_path;
-    } else if (data.error && data.error !== "No folder selected") {
-      alert(`Folder browser error: ${data.error}`);
+      return;
     }
   } catch (err) {
-    alert('Failed to launch folder picker.');
+    console.log('Native folder picker unavailable, falling back to Web Folder Picker.');
   }
+
+  // Fallback for Web/Cloud (Render): Trigger HTML5 Folder Picker directly in browser
+  let input = document.getElementById('web-folder-picker-input');
+  if (!input) {
+    input = document.createElement('input');
+    input.id = 'web-folder-picker-input';
+    input.type = 'file';
+    input.webkitdirectory = true;
+    input.directory = true;
+    input.multiple = true;
+    input.style.display = 'none';
+    document.body.appendChild(input);
+  }
+
+  input.onchange = (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    let folderName = 'Selected_Media_Folder';
+    if (files[0] && files[0].webkitRelativePath) {
+      folderName = files[0].webkitRelativePath.split('/')[0];
+    }
+
+    const folderInput = document.getElementById('project-folder-input');
+    const nameInput = document.getElementById('project-name-input');
+    if (folderInput) folderInput.value = `[Uploaded Folder] ${folderName}`;
+    if (nameInput && !nameInput.value.trim()) nameInput.value = folderName;
+
+    window.selectedProjectFolderFiles = files;
+    const statusMsg = document.getElementById('project-status-msg');
+    if (statusMsg) {
+      statusMsg.innerHTML = `<span style="color: var(--cyan-electro);">📁 Folder "${folderName}" loaded (${files.length} media files ready to save & upload)!</span>`;
+    }
+  };
+
+  input.click();
 }
 
 async function openProjectFolder(projId) {
@@ -641,7 +676,18 @@ async function saveProject() {
     });
     const result = await res.json();
     if (res.ok) {
-      statusMsg.innerHTML = `<span style="color: var(--green-electro);">✅ Project saved successfully!</span>`;
+      const savedProjId = result.id || (result.project && result.project.id);
+      if (window.selectedProjectFolderFiles && window.selectedProjectFolderFiles.length > 0 && savedProjId) {
+        statusMsg.innerHTML = `<span style="color: var(--cyan-electro);">⏳ Uploading ${window.selectedProjectFolderFiles.length} media files to project...</span>`;
+        const formData = new FormData();
+        for (let i = 0; i < window.selectedProjectFolderFiles.length; i++) {
+          formData.append('files[]', window.selectedProjectFolderFiles[i]);
+        }
+        await fetch(`/api/projects/${savedProjId}/upload`, { method: 'POST', body: formData });
+        window.selectedProjectFolderFiles = null;
+      }
+
+      statusMsg.innerHTML = `<span style="color: var(--green-electro);">✅ Project saved & folder files synced successfully!</span>`;
       document.getElementById('project-name-input').value = '';
       document.getElementById('project-folder-input').value = '';
       document.getElementById('project-id-input').value = '';

@@ -408,23 +408,30 @@ def manage_accounts():
         if not username:
             username = f"Account_{int(time.time())}"
             
-        acc_id = f"acc_{int(time.time())}"
-        new_acc = {
-            "id": acc_id,
-            "username": username,
-            "status": "active",
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
-        
+        existing = next((a for a in accounts if a.get("username", "").strip().lower() == username.lower()), None)
+        if existing:
+            acc_id = existing.get("id")
+            existing["status"] = "active"
+            target_acc = existing
+        else:
+            acc_id = f"acc_{int(time.time())}"
+            target_acc = {
+                "id": acc_id,
+                "username": username,
+                "status": "active",
+                "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            accounts.append(target_acc)
+
         if raw_cookie:
             success, msg = browser_poster.save_manual_cookies(acc_id, raw_cookie)
             if not success:
                 return jsonify({"error": msg}), 400
 
-        accounts.append(new_acc)
+        target_acc["has_cookies"] = True
         save_json(ACCOUNTS_FILE, accounts)
-        add_log(f"🔑 Account @{username} added successfully!", "success")
-        return jsonify({"message": "Account added", "account": new_acc})
+        add_log(f"🔑 Account @{username} session activated successfully!", "success")
+        return jsonify({"message": "Account session saved", "account": target_acc})
 
 @app.route('/api/accounts/add_and_launch_login', methods=['POST'])
 def add_and_launch_login():
@@ -577,7 +584,7 @@ def browse_folder():
         else:
             return jsonify({"error": "No folder selected"}), 400
     except Exception as e:
-        return jsonify({"error": f"Failed to open native folder dialog: {e}"}), 500
+        return jsonify({"is_cloud": True, "error": "Native GUI folder dialog not available on cloud. Web Folder Picker activated."}), 200
 
 @app.route('/api/open_folder', methods=['POST'])
 def open_folder():
@@ -820,7 +827,7 @@ def manage_projects():
 
         save_json(PROJECTS_FILE, projects)
         add_log(f"📁 Project '{name}' saved & assigned to account @{acc_map.get(account_id, 'All')} (Max 24h Posts: {max_posts_per_day or 'Unlimited'})", "success")
-        return jsonify({"message": "Project saved successfully", "project": proj_data})
+        return jsonify({"message": "Project saved successfully", "project": proj_data, "id": proj_data.get("id")})
 
 @app.route('/api/projects/<proj_id>/files', methods=['GET'])
 def get_project_files(proj_id):

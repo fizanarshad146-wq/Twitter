@@ -6,7 +6,12 @@ from playwright.sync_api import sync_playwright
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
+PW_BROWSERS_DIR = os.path.join(BASE_DIR, 'pw-browsers')
 os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(PW_BROWSERS_DIR, exist_ok=True)
+
+if 'PLAYWRIGHT_BROWSERS_PATH' not in os.environ or os.environ.get('PLAYWRIGHT_BROWSERS_PATH') in ['0', '']:
+    os.environ['PLAYWRIGHT_BROWSERS_PATH'] = PW_BROWSERS_DIR
 
 class MultiAccountBrowserPoster:
     def __init__(self, log_callback=None):

@@ -1,0 +1,19 @@
+[
+  {
+    "id": "proj_1789617029",
+    "name": "tes",
+    "account_id": "acc_1789271741",
+    "folder_path": "C:\\Users\\fizan\\Downloads\\generated_images_1789214459178",
+    "posting_mode": "silent",
+    "delay_min": 30,
+    "delay_max": 60,
+    "delay_unit": "sec",
+    "caption_mode": "auto_filename",
+    "custom_caption": "",
+    "created_at": "2026-09-17 08:50:29",
+    "account_username": "Account_1789271741",
+    "total_files": 50,
+    "remaining_files": 50,
+    "posted_files": 0
+  }
+]

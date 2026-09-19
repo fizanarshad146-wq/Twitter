@@ -263,7 +263,6 @@ class MultiAccountBrowserPoster:
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
                 "--no-zygote",
-                "--single-process",
                 "--disable-software-rasterizer",
                 "--disable-extensions",
                 "--disable-background-networking",

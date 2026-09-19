@@ -7,5 +7,3 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.12
-      - key: PLAYWRIGHT_BROWSERS_PATH
-        value: 0

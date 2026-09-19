@@ -306,8 +306,8 @@ class MultiAccountBrowserPoster:
             if not browser:
                 try:
                     import subprocess
-                    self.log("⚙️ Chromium binary missing on server. Running playwright install chromium --with-deps...", "warning", "posting")
-                    subprocess.run(["playwright", "install", "--with-deps", "chromium"], check=True, timeout=300)
+                    self.log("⚙️ Chromium binary missing on server. Running python -m playwright install chromium...", "warning", "posting")
+                    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True, timeout=300)
                     browser = p.chromium.launch(headless=headless, args=args_list, timeout=15000)
                     self.log("✅ Chromium browser launched after auto-install.", "info", "posting")
                 except Exception as install_err:

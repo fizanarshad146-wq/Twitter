@@ -244,6 +244,9 @@ class MultiAccountBrowserPoster:
         Automates creating a tweet on x.com using saved storage_state cookies for a specific account.
         Ensures thread asyncio loop is properly initialized on Python 3.10+.
         """
+        if sys.platform != "win32":
+            headless = True  # Always enforce headless=True on Linux cloud containers!
+
         cpath = self.get_account_cookie_path(account_id)
         if not self.has_saved_session(account_id):
             return False, f"❌ No valid session cookies found for account ID {account_id}."

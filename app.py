@@ -550,6 +550,45 @@ def activate_account(acc_id):
     save_json(ACCOUNTS_FILE, accounts)
     return jsonify({"message": "Account activated"})
 
+@app.route('/api/accounts/upload_session', methods=['POST'])
+def upload_account_session():
+    data = request.json or {}
+    account_id = data.get("account_id")
+    username = data.get("username")
+    cookies_data = data.get("cookies_data")
+    
+    if not account_id or not cookies_data:
+        return jsonify({"error": "Missing account_id or cookies_data"}), 400
+        
+    cpath = browser_poster.get_account_cookie_path(account_id)
+    try:
+        with open(cpath, 'w', encoding='utf-8') as f:
+            if isinstance(cookies_data, str):
+                f.write(cookies_data)
+            else:
+                json.dump(cookies_data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return jsonify({"error": f"Failed to save cookies: {e}"}), 500
+        
+    accounts = load_json(ACCOUNTS_FILE, [])
+    acc = next((a for a in accounts if a.get("id") == account_id), None)
+    if not acc:
+        acc = {
+            "id": account_id,
+            "username": username or account_id,
+            "status": "active",
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        accounts.append(acc)
+    else:
+        acc["status"] = "active"
+        if username:
+            acc["username"] = username
+            
+    save_json(ACCOUNTS_FILE, accounts)
+    add_log(f"🟢 Session cookie for account @{acc.get('username')} synced to cloud!", "success", "account")
+    return jsonify({"message": "Session cookies uploaded successfully", "account": acc})
+
 @app.route('/api/accounts/<acc_id>', methods=['DELETE'])
 def delete_account(acc_id):
     accounts = load_json(ACCOUNTS_FILE, [])
@@ -669,7 +708,8 @@ def campaign_control():
     action = data.get("action")
     
     if action == "start":
-        if campaign_state["is_running"]:
+        thread_is_alive = poster_thread is not None and poster_thread.is_alive()
+        if campaign_state["is_running"] and thread_is_alive:
             campaign_state["is_paused"] = False
             add_log("▶️ Campaign Resumed", "info")
             return jsonify({"message": "Campaign resumed"})
@@ -698,6 +738,7 @@ def campaign_control():
         
         poster_thread = threading.Thread(target=posting_worker, daemon=True)
         poster_thread.start()
+        add_log("🚀 Auto-Posting Worker Thread Launched!", "success")
         return jsonify({"message": "Campaign started"})
         
     elif action == "pause":
@@ -1051,12 +1092,12 @@ def reset_guide():
     add_log("🔄 User Guide reset to default instructions.", "warning")
     return jsonify({"message": "Guide reset to default", "guide": DEFAULT_GUIDE_STEPS})
 
-if __name__ == '__main__':
-    # Auto-resume worker if campaign was running before restart
-    if campaign_state.get("is_running") and poster_thread is None:
-        add_log("🔄 Resuming auto-posting worker thread after server restart...", "info", "system")
-        poster_thread = threading.Thread(target=posting_worker, daemon=True)
-        poster_thread.start()
+# Auto-resume worker if campaign was running before server restart (Gunicorn / Flask)
+if campaign_state.get("is_running") and (poster_thread is None or not poster_thread.is_alive()):
+    add_log("🔄 Resuming auto-posting worker thread after server startup...", "info", "system")
+    poster_thread = threading.Thread(target=posting_worker, daemon=True)
+    poster_thread.start()
 
+if __name__ == '__main__':
     print("⚡ Starting Twitter Auto Posting Server on http://127.0.0.1:5000")
     app.run(host='127.0.0.1', port=5000, debug=True)

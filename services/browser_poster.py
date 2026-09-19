@@ -376,10 +376,11 @@ class MultiAccountBrowserPoster:
                 self.log("📝 Locating tweet composer textbox...", "info", "posting")
                 try:
                     elem = page.locator(textbox_selector).first
-                    if elem.count() > 0 and elem.is_visible():
-                        textbox = elem
-                except Exception:
-                    pass
+                    elem.wait_for(state="visible", timeout=10000)
+                    textbox = elem
+                    self.log("✅ Tweet composer textbox located successfully!", "info", "posting")
+                except Exception as tb_wait_err:
+                    self.log(f"Notice waiting for direct compose box: {tb_wait_err}", "warning", "posting")
 
                 if not textbox:
                     self.log("🔍 Trying fallback inline compose box on home page...", "info", "posting")
@@ -394,8 +395,8 @@ class MultiAccountBrowserPoster:
                             time.sleep(2)
 
                         elem = page.locator(textbox_selector).first
-                        if elem.count() > 0 and elem.is_visible():
-                            textbox = elem
+                        elem.wait_for(state="visible", timeout=5000)
+                        textbox = elem
                     except Exception as fb_err:
                         self.log(f"Fallback inline check info: {fb_err}", "warning", "posting")
 

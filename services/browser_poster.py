@@ -348,10 +348,14 @@ class MultiAccountBrowserPoster:
                     except Exception:
                         pass
 
-                # Step 1: Navigating to x.com/home
-                self.log("🌐 Navigating to x.com/home to verify login context...", "info", "posting")
-                page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=25000)
-                time.sleep(3 if headless else 5)
+                # Step 1: Navigating to x.com/compose/post directly for fast loading
+                self.log("🌐 Navigating to X Compose Post Editor (Fast Mode)...", "info", "posting")
+                try:
+                    page.goto("https://x.com/compose/post", wait_until="domcontentloaded", timeout=12000)
+                except Exception as nav_e:
+                    self.log(f"Navigation timeout notice (proceeding anyway): {nav_e}", "info", "posting")
+                
+                time.sleep(2)
                 _dismiss_overlays()
 
                 # Step 2: Check URL for login / challenge
@@ -363,18 +367,10 @@ class MultiAccountBrowserPoster:
                     reason = "Security verification/challenge prompt detected on X" if "challenge" in curr_url or "access" in curr_url else "Session expired or logged out"
                     return False, f"❌ {reason} for account {account_id} (URL: {curr_url}). Please re-login in Account Manager."
 
-                # Step 3: Open compose post box
-                self.log("📝 Opening compose post editor...", "info", "posting")
-                try:
-                    page.goto("https://x.com/compose/post", wait_until="domcontentloaded", timeout=20000)
-                    time.sleep(2)
-                    _dismiss_overlays()
-                except Exception as nav_e:
-                    self.log(f"Direct compose page navigation notice: {nav_e}", "info", "posting")
-
                 textbox_selector = 'div[data-testid="tweetTextarea_0"], div[role="textbox"][contenteditable="true"], div[aria-label*="Post text"], div[aria-label*="Tweet text"], div[aria-label*="What is happening"]'
                 textbox = None
 
+                self.log("📝 Locating tweet composer textbox...", "info", "posting")
                 try:
                     elem = page.locator(textbox_selector).first
                     if elem.count() > 0 and elem.is_visible():
@@ -385,7 +381,7 @@ class MultiAccountBrowserPoster:
                 if not textbox:
                     self.log("🔍 Trying fallback inline compose box on home page...", "info", "posting")
                     try:
-                        page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=20000)
+                        page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=12000)
                         time.sleep(2)
                         _dismiss_overlays()
 
@@ -415,7 +411,7 @@ class MultiAccountBrowserPoster:
                     except Exception:
                         page.keyboard.insert_text(text_content)
                     self.log(f"✍️ Entered tweet text ({len(text_content)} chars)", "info", "posting")
-                    time.sleep(1.5 if headless else 2)
+                    time.sleep(1)
 
                 if media_filepath:
                     if not os.path.exists(media_filepath):
@@ -425,7 +421,7 @@ class MultiAccountBrowserPoster:
                         if file_input.count() > 0:
                             file_input.set_input_files(media_filepath, timeout=10000)
                             self.log(f"📎 Attached media file: {os.path.basename(media_filepath)} ({round(os.path.getsize(media_filepath)/1024, 1)} KB)", "info", "posting")
-                            time.sleep(4 if headless else 6)
+                            time.sleep(3)
                         else:
                             self.log("⚠️ File input element not found for media attachment.", "warning", "posting")
 
@@ -437,7 +433,7 @@ class MultiAccountBrowserPoster:
                         if post_btn.is_enabled():
                             post_btn.click(force=True, timeout=5000)
                             self.log("🚀 Clicked 'Post' button! Waiting for confirmation...", "success", "posting")
-                            time.sleep(4 if headless else 6)
+                            time.sleep(3)
                             
                             try:
                                 context.storage_state(path=cpath)

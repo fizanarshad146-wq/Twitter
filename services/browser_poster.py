@@ -241,9 +241,42 @@ class MultiAccountBrowserPoster:
 
     def post_tweet_with_account(self, account_id, text_content, media_filepath=None, headless=True):
         """
-        Automates creating a tweet on x.com using saved storage_state cookies for a specific account.
-        Ensures thread asyncio loop is properly initialized on Python 3.10+.
+        Executes automated tweet posting wrapped in a Process-Level Timeout Guard.
+        Guarantees that if Playwright or C++ browser engine hangs on cloud network/TLS,
+        the process is FORCE-KILLED after 45 seconds and control is returned to caller immediately!
         """
+        import multiprocessing
+
+        def _runner(q, acc_id, txt, mpath, hless):
+            try:
+                res = self._internal_post_tweet(acc_id, txt, mpath, hless)
+                q.put(res)
+            except Exception as ex:
+                q.put((False, f"❌ Worker process error: {ex}"))
+
+        q = multiprocessing.Queue()
+        p = multiprocessing.Process(
+            target=_runner,
+            args=(q, account_id, text_content, media_filepath, headless)
+        )
+        p.start()
+        p.join(timeout=45)
+
+        if p.is_alive():
+            self.log("⚠️ Playwright process exceeded 45s hard limit (cloud network socket hang). Terminating worker process...", "warning", "posting")
+            try:
+                p.terminate()
+                p.join(timeout=2)
+            except Exception:
+                pass
+            return False, "❌ Posting attempt timed out after 45 seconds (Playwright process auto-terminated)."
+
+        if not q.empty():
+            return q.get()
+
+        return False, "❌ Worker process terminated without returning result."
+
+    def _internal_post_tweet(self, account_id, text_content, media_filepath=None, headless=True):
         if sys.platform != "win32":
             headless = True  # Always enforce headless=True on Linux cloud containers!
 

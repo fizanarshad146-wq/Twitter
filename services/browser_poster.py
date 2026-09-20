@@ -273,7 +273,6 @@ class MultiAccountBrowserPoster:
                 "--disable-gpu",
                 "--no-zygote",
                 "--disable-software-rasterizer",
-                "--disable-extensions",
                 "--disable-background-networking",
                 "--disable-background-timer-throttling",
                 "--disable-breakpad",
@@ -287,7 +286,9 @@ class MultiAccountBrowserPoster:
                 "--js-flags=--max-old-space-size=256",
                 "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             ]
-            if not headless:
+            if headless:
+                args_list.insert(0, "--headless=new")
+            else:
                 args_list.append("--start-maximized")
 
             self.log("⚙️ Launching Playwright Chromium instance...", "info", "posting")
@@ -314,8 +315,8 @@ class MultiAccountBrowserPoster:
             if not browser:
                 try:
                     import subprocess
-                    self.log("⚙️ Chromium binary missing on server. Running python -m playwright install chromium...", "warning", "posting")
-                    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True, timeout=300)
+                    self.log("⚙️ Chromium binary missing on server. Running python -m playwright install chromium chromium-headless-shell...", "warning", "posting")
+                    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium", "chromium-headless-shell"], check=True, timeout=300)
                     browser = p.chromium.launch(headless=headless, args=args_list, timeout=15000)
                     self.log("✅ Chromium browser launched after auto-install.", "info", "posting")
                 except Exception as install_err:
@@ -327,9 +328,9 @@ class MultiAccountBrowserPoster:
             try:
                 viewport_setting = None if not headless else {"width": 1280, "height": 800}
                 context = browser.new_context(storage_state=cpath, viewport=viewport_setting)
-                # Hard timeouts on page & actions
-                context.set_default_timeout(15000)
-                context.set_default_navigation_timeout(25000)
+                # Hard timeouts on page & actions (8s max to prevent cloud thread hangs)
+                context.set_default_timeout(8000)
+                context.set_default_navigation_timeout(8000)
 
                 page = context.new_page()
 
@@ -359,17 +360,17 @@ class MultiAccountBrowserPoster:
                     except Exception:
                         pass
 
-                # Step 1: Navigating to x.com/compose/post directly for fast loading
-                self.log("🌐 Navigating to X Compose Post Editor (Fast Mode)...", "info", "posting")
+                # Step 1: Navigating to x.com/compose/post with wait_until="commit" (instant return, zero hang risk)
+                self.log("🌐 Navigating to X Compose Post Editor (Fast Commit Mode)...", "info", "posting")
                 try:
-                    page.goto("https://x.com/compose/post", wait_until="domcontentloaded", timeout=12000)
+                    page.goto("https://x.com/compose/post", wait_until="commit", timeout=8000)
                 except Exception as nav_e:
-                    self.log(f"Navigation timeout notice (proceeding anyway): {nav_e}", "info", "posting")
+                    self.log(f"Navigation commit notice: {nav_e}", "info", "posting")
                 
-                time.sleep(1.5)
+                time.sleep(1)
                 _dismiss_overlays()
 
-                # Step 2: Check URL for login / challenge
+                # Step 2: Check URL for login / challenge immediately
                 curr_url = page.url
                 self.log(f"🔍 Current session URL: {curr_url}", "info", "posting")
                 
@@ -410,15 +411,15 @@ class MultiAccountBrowserPoster:
                 if not textbox:
                     self.log("🔍 Direct compose check pending. Navigating to Home page fallback...", "info", "posting")
                     try:
-                        page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=10000)
-                        time.sleep(1.5)
+                        page.goto("https://x.com/home", wait_until="commit", timeout=8000)
+                        time.sleep(1)
                         _dismiss_overlays()
 
                         side_compose = page.locator('a[data-testid="SideNav_NewTweet_Button"], div[data-testid="SideNav_NewTweet_Button"]').first
                         if side_compose.count() > 0 and side_compose.is_visible():
                             self.log("💡 Clicking SideNav 'Post' button on home page...", "info", "posting")
                             side_compose.click(force=True, timeout=3000)
-                            time.sleep(1.5)
+                            time.sleep(1)
 
                         for _ in range(5):
                             _dismiss_overlays()

@@ -13,6 +13,14 @@ os.makedirs(PW_BROWSERS_DIR, exist_ok=True)
 if 'PLAYWRIGHT_BROWSERS_PATH' not in os.environ or os.environ.get('PLAYWRIGHT_BROWSERS_PATH') in ['0', '']:
     os.environ['PLAYWRIGHT_BROWSERS_PATH'] = PW_BROWSERS_DIR
 
+def _multiprocess_post_runner(q, account_id, text_content, media_filepath, headless):
+    try:
+        poster = MultiAccountBrowserPoster()
+        res = poster._internal_post_tweet(account_id, text_content, media_filepath, headless)
+        q.put(res)
+    except Exception as ex:
+        q.put((False, f"❌ Worker process error: {ex}"))
+
 class MultiAccountBrowserPoster:
     def __init__(self, log_callback=None):
         self.data_dir = DATA_DIR
@@ -247,16 +255,10 @@ class MultiAccountBrowserPoster:
         """
         import multiprocessing
 
-        def _runner(q, acc_id, txt, mpath, hless):
-            try:
-                res = self._internal_post_tweet(acc_id, txt, mpath, hless)
-                q.put(res)
-            except Exception as ex:
-                q.put((False, f"❌ Worker process error: {ex}"))
-
-        q = multiprocessing.Queue()
-        p = multiprocessing.Process(
-            target=_runner,
+        ctx = multiprocessing.get_context("spawn" if sys.platform == "win32" else "fork")
+        q = ctx.Queue()
+        p = ctx.Process(
+            target=_multiprocess_post_runner,
             args=(q, account_id, text_content, media_filepath, headless)
         )
         p.start()

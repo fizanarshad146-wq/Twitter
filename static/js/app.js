@@ -123,7 +123,7 @@ let currentLogsCache = [];
 function filterLogCategory(cat) {
   activeLogCategory = cat;
   document.querySelectorAll('.log-filter-pill').forEach(pill => pill.classList.remove('active'));
-  const activePill = Array.from(document.querySelectorAll('.log-filter-pill')).find(p => p.getAttribute('onclick').includes(cat));
+  const activePill = Array.from(document.querySelectorAll('.log-filter-pill')).find(p => p.getAttribute('onclick')?.includes(cat));
   if (activePill) activePill.classList.add('active');
   renderLogs(currentLogsCache);
 }
@@ -133,18 +133,29 @@ function renderLogs(logs) {
   const dashboardContainer = document.getElementById('dashboard-logs-container');
   const fullContainer = document.getElementById('full-logs-container');
   
-  if (!logs || logs.length === 0) return;
+  if (!logs || logs.length === 0) {
+    if (dashboardContainer) {
+      dashboardContainer.innerHTML = `<div class="log-item info"><span class="msg">No recent posting activity logged yet.</span></div>`;
+    }
+    if (fullContainer) {
+      fullContainer.innerHTML = `<div class="log-item info"><span class="msg">No logs recorded yet.</span></div>`;
+    }
+    return;
+  }
 
   // Dashboard activity stream: show posting logs
   const postingLogs = logs.filter(log => (log.category === 'posting' || log.category === 'error'));
   const dHtml = (postingLogs.length === 0)
     ? `<div class="log-item info"><span class="msg">No recent posting activity logged yet.</span></div>`
-    : postingLogs.slice(0, 50).map(log => `
+    : postingLogs.slice(0, 50).map(log => {
+        const timeStr = log.timestamp ? (log.timestamp.includes(' ') ? log.timestamp.split(' ')[1] : log.timestamp) : '';
+        return `
         <div class="log-item ${log.level}">
-          <span class="time">[${log.timestamp.split(' ')[1]}]</span>
+          <span class="time">[${timeStr}]</span>
           <span class="msg">[${(log.category || 'posting').toUpperCase()}] ${log.message}</span>
         </div>
-      `).join('');
+      `;
+      }).join('');
 
   // Full telemetry console: show selected filter category
   const filtered = logs.filter(log => {
@@ -154,37 +165,119 @@ function renderLogs(logs) {
 
   const fHtml = filtered.length === 0 
     ? `<div class="log-item info"><span class="msg">No logs in category '${activeLogCategory}'.</span></div>`
-    : filtered.map(log => `
+    : filtered.map(log => {
+        const timeStr = log.timestamp ? (log.timestamp.includes(' ') ? log.timestamp.split(' ')[1] : log.timestamp) : '';
+        return `
         <div class="log-item ${log.level}">
-          <span class="time">[${log.timestamp.split(' ')[1]}]</span>
+          <span class="time">[${timeStr}]</span>
           <span class="msg">[${(log.category || 'system').toUpperCase()}] ${log.message}</span>
         </div>
-      `).join('');
+      `;
+      }).join('');
 
   if (dashboardContainer) dashboardContainer.innerHTML = dHtml;
   if (fullContainer) fullContainer.innerHTML = fHtml;
 }
 
-function copyFilteredLogs() {
-  const filtered = currentLogsCache.filter(log => {
-    if (activeLogCategory === 'all') return true;
-    return (log.category || 'system') === activeLogCategory;
+// Universal Clipboard Copy helper (supports HTTPS, HTTP, PyWebView, legacy execCommand fallback)
+function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  } else {
+    return new Promise((resolve, reject) => {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const success = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (success) resolve();
+        else reject(new Error('execCommand failed'));
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+}
+
+function extractDOMTelemetryLogs() {
+  const fullContainer = document.getElementById('full-logs-container');
+  if (!fullContainer) return '';
+  const items = fullContainer.querySelectorAll('.log-item');
+  const lines = [];
+  items.forEach(item => {
+    const time = item.querySelector('.time')?.textContent?.trim() || '';
+    const msg = item.querySelector('.msg')?.textContent?.trim() || item.textContent?.trim() || '';
+    if (msg && !msg.includes('No logs in category') && !msg.includes('No logs recorded')) {
+      lines.push(`${time} ${msg}`.trim());
+    }
   });
+  return lines.join('\n');
+}
+
+function copyFilteredLogs() {
+  let text = '';
+  let count = 0;
+
+  if (currentLogsCache && currentLogsCache.length > 0) {
+    const filtered = currentLogsCache.filter(log => {
+      if (activeLogCategory === 'all') return true;
+      return (log.category || 'system') === activeLogCategory;
+    });
+    count = filtered.length;
+    text = filtered.map(l => `[${l.timestamp}] [${(l.category || 'system').toUpperCase()}] ${l.message}`).join('\n');
+  }
   
-  const text = filtered.map(l => `[${l.timestamp}] [${(l.category || 'system').toUpperCase()}] ${l.message}`).join('\n');
-  navigator.clipboard.writeText(text).then(() => {
-    alert(`📋 Copied ${filtered.length} visible logs to clipboard!`);
+  // Fallback: If currentLogsCache is empty or returned 0, extract visible text directly from the DOM!
+  if (!text || text.trim() === '') {
+    text = extractDOMTelemetryLogs();
+    if (text) {
+      count = text.split('\n').length;
+    }
+  }
+
+  if (!text || text.trim() === '') {
+    alert('⚠️ No logs available to copy.');
+    return;
+  }
+
+  copyToClipboard(text).then(() => {
+    alert(`📋 Copied ${count} visible log(s) to clipboard!`);
   }).catch(() => {
-    alert('Failed to copy logs.');
+    alert('Failed to copy logs to clipboard.');
   });
 }
 
 function copyAllLogs() {
-  const text = currentLogsCache.map(l => `[${l.timestamp}] [${(l.category || 'system').toUpperCase()}] ${l.message}`).join('\n');
-  navigator.clipboard.writeText(text).then(() => {
-    alert(`📋 Copied all ${currentLogsCache.length} system logs to clipboard!`);
+  let text = '';
+  let count = 0;
+
+  if (currentLogsCache && currentLogsCache.length > 0) {
+    count = currentLogsCache.length;
+    text = currentLogsCache.map(l => `[${l.timestamp}] [${(l.category || 'system').toUpperCase()}] ${l.message}`).join('\n');
+  }
+
+  if (!text || text.trim() === '') {
+    text = extractDOMTelemetryLogs();
+    if (text) {
+      count = text.split('\n').length;
+    }
+  }
+
+  if (!text || text.trim() === '') {
+    alert('⚠️ No logs available to copy.');
+    return;
+  }
+
+  copyToClipboard(text).then(() => {
+    alert(`📋 Copied all ${count} telemetry log(s) to clipboard!`);
   }).catch(() => {
-    alert('Failed to copy logs.');
+    alert('Failed to copy logs to clipboard.');
   });
 }
 

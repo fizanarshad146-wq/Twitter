@@ -340,14 +340,22 @@ class MultiAccountBrowserPoster:
                             'div[role="button"]:has-text("Accept all cookies")',
                             'div[role="button"]:has-text("Got it")',
                             'div[role="button"]:has-text("Not now")',
+                            'div[role="button"]:has-text("Dismiss")',
+                            'div[role="button"]:has-text("Skip")',
+                            'div[role="button"]:has-text("Maybe later")',
+                            'div[role="button"]:has-text("Agree")',
                             'div[data-testid="app-bar-close"]',
-                            'div[role="button"]:has-text("Dismiss")'
+                            'div[aria-label="Close"]',
+                            'button[aria-label="Close"]'
                         ]
                         for sel in selectors:
-                            btn = page.locator(sel).first
-                            if btn.count() > 0 and btn.is_visible():
-                                btn.click(timeout=2000, force=True)
-                                time.sleep(0.5)
+                            try:
+                                btns = page.locator(sel)
+                                if btns.count() > 0 and btns.first.is_visible():
+                                    btns.first.click(timeout=1000, force=True)
+                                    time.sleep(0.3)
+                            except Exception:
+                                pass
                     except Exception:
                         pass
 
@@ -358,7 +366,7 @@ class MultiAccountBrowserPoster:
                 except Exception as nav_e:
                     self.log(f"Navigation timeout notice (proceeding anyway): {nav_e}", "info", "posting")
                 
-                time.sleep(2)
+                time.sleep(1.5)
                 _dismiss_overlays()
 
                 # Step 2: Check URL for login / challenge
@@ -370,33 +378,56 @@ class MultiAccountBrowserPoster:
                     reason = "Security verification/challenge prompt detected on X" if "challenge" in curr_url or "access" in curr_url else "Session expired or logged out"
                     return False, f"❌ {reason} for account {account_id} (URL: {curr_url}). Please re-login in Account Manager."
 
-                textbox_selector = 'div[data-testid="tweetTextarea_0"], div[role="textbox"][contenteditable="true"], div[aria-label*="Post text"], div[aria-label*="Tweet text"], div[aria-label*="What is happening"]'
+                textbox_selector = 'div[data-testid^="tweetTextarea"], div[role="textbox"][contenteditable="true"], div[aria-label*="Post text"], div[aria-label*="Tweet text"], div[aria-label*="happening"], div[aria-label*="What"], div.public-DraftEditor-content'
                 textbox = None
 
                 self.log("📝 Locating tweet composer textbox...", "info", "posting")
-                try:
-                    elem = page.locator(textbox_selector).first
-                    elem.wait_for(state="visible", timeout=10000)
-                    textbox = elem
-                    self.log("✅ Tweet composer textbox located successfully!", "info", "posting")
-                except Exception as tb_wait_err:
-                    self.log(f"Notice waiting for direct compose box: {tb_wait_err}", "warning", "posting")
+                
+                # Active fast polling loop (up to 8s) with real-time feedback and side nav trigger
+                for attempt in range(1, 9):
+                    _dismiss_overlays()
+                    try:
+                        elem = page.locator(textbox_selector).first
+                        if elem.count() > 0 and elem.is_visible():
+                            textbox = elem
+                            self.log(f"✅ Tweet composer textbox located! (Attempt {attempt})", "info", "posting")
+                            break
+                    except Exception:
+                        pass
+
+                    if attempt == 3:
+                        try:
+                            side_btn = page.locator('a[data-testid="SideNav_NewTweet_Button"], div[data-testid="SideNav_NewTweet_Button"]').first
+                            if side_btn.count() > 0 and side_btn.is_visible():
+                                self.log("💡 Triggering SideNav 'Post' button to open composer...", "info", "posting")
+                                side_btn.click(force=True, timeout=2000)
+                                time.sleep(1)
+                        except Exception:
+                            pass
+
+                    time.sleep(1)
 
                 if not textbox:
-                    self.log("🔍 Trying fallback inline compose box on home page...", "info", "posting")
+                    self.log("🔍 Direct compose check pending. Navigating to Home page fallback...", "info", "posting")
                     try:
-                        page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=12000)
-                        time.sleep(2)
+                        page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=10000)
+                        time.sleep(1.5)
                         _dismiss_overlays()
 
-                        side_compose = page.locator('a[data-testid="SideNav_NewTweet_Button"]').first
+                        side_compose = page.locator('a[data-testid="SideNav_NewTweet_Button"], div[data-testid="SideNav_NewTweet_Button"]').first
                         if side_compose.count() > 0 and side_compose.is_visible():
+                            self.log("💡 Clicking SideNav 'Post' button on home page...", "info", "posting")
                             side_compose.click(force=True, timeout=3000)
-                            time.sleep(2)
+                            time.sleep(1.5)
 
-                        elem = page.locator(textbox_selector).first
-                        elem.wait_for(state="visible", timeout=5000)
-                        textbox = elem
+                        for _ in range(5):
+                            _dismiss_overlays()
+                            elem = page.locator(textbox_selector).first
+                            if elem.count() > 0 and elem.is_visible():
+                                textbox = elem
+                                self.log("✅ Fallback compose textbox located!", "info", "posting")
+                                break
+                            time.sleep(1)
                     except Exception as fb_err:
                         self.log(f"Fallback inline check info: {fb_err}", "warning", "posting")
 
